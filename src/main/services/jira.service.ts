@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosError } from 'axios';
 
 export interface JiraIssue {
   key: string;
@@ -40,7 +40,42 @@ export class JiraService {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
       },
+      timeout: 10000, // 10 second timeout
     });
+  }
+
+  private handleError(error: unknown, context: string): never {
+    if (axios.isAxiosError(error)) {
+      const axiosError = error as AxiosError;
+      const status = axiosError.response?.status;
+      const data = axiosError.response?.data as any;
+
+      console.error(`[JiraService] ${context}:`, {
+        status,
+        message: axiosError.message,
+        data,
+        url: axiosError.config?.url,
+      });
+
+      if (status === 401) {
+        throw new Error('Authentification Jira échouée. Vérifiez votre email et token API.');
+      } else if (status === 403) {
+        throw new Error('Accès refusé. Vérifiez vos permissions Jira.');
+      } else if (status === 404) {
+        throw new Error('Ressource Jira non trouvée. Vérifiez l\'URL de base.');
+      } else if (axiosError.code === 'ENOTFOUND' || axiosError.code === 'ECONNREFUSED') {
+        throw new Error(`Impossible de se connecter à Jira (${this.baseUrl}). Vérifiez l'URL.`);
+      } else if (axiosError.code === 'ETIMEDOUT') {
+        throw new Error('Timeout lors de la connexion à Jira. Vérifiez votre connexion réseau.');
+      } else if (data?.errorMessages && Array.isArray(data.errorMessages)) {
+        throw new Error(`Erreur Jira: ${data.errorMessages.join(', ')}`);
+      } else {
+        throw new Error(`Erreur Jira (${status || 'unknown'}): ${axiosError.message}`);
+      }
+    }
+
+    console.error(`[JiraService] ${context}:`, error);
+    throw new Error(`Erreur inattendue: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 
   async getCurrentUser() {
@@ -48,8 +83,7 @@ export class JiraService {
       const response = await this.client.get('/myself');
       return response.data;
     } catch (error) {
-      console.error('Error fetching current user:', error);
-      throw new Error('Failed to authenticate with Jira');
+      this.handleError(error, 'getCurrentUser');
     }
   }
 
@@ -64,8 +98,7 @@ export class JiraService {
       });
       return response.data;
     } catch (error) {
-      console.error('Error searching issues:', error);
-      throw new Error('Failed to search Jira issues');
+      this.handleError(error, `searchIssues(jql: "${jql}")`);
     }
   }
 
@@ -78,8 +111,7 @@ export class JiraService {
       });
       return response.data;
     } catch (error) {
-      console.error(`Error fetching issue ${issueKey}:`, error);
-      throw new Error(`Failed to fetch issue ${issueKey}`);
+      this.handleError(error, `getIssue(${issueKey})`);
     }
   }
 
@@ -96,7 +128,9 @@ export class JiraService {
   }
 
   async searchIssuesByText(projectKey: string, searchText: string): Promise<JiraIssue[]> {
-    const jql = `project = ${projectKey} AND (text ~ "${searchText}" OR key = "${searchText.toUpperCase()}") ORDER BY updated DESC`;
+    // Escape special characters in search text for JQL
+    const escapedText = searchText.replace(/["\\']/g, '\\$&');
+    const jql = `project = ${projectKey} AND (text ~ "${escapedText}" OR key = "${searchText.toUpperCase()}") ORDER BY updated DESC`;
     const result = await this.searchIssues(jql, 20);
     return result.issues;
   }

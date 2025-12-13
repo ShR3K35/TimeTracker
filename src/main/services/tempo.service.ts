@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosError } from 'axios';
 
 export interface TempoWorklog {
   tempoWorklogId?: number;
@@ -29,8 +29,10 @@ export interface TempoWorklogResponse {
 export class TempoService {
   private client: AxiosInstance;
   private accountId: string;
+  private baseUrl: string;
 
   constructor(baseUrl: string, apiToken: string, accountId: string) {
+    this.baseUrl = baseUrl;
     this.accountId = accountId;
     this.client = axios.create({
       baseURL: baseUrl,
@@ -39,7 +41,45 @@ export class TempoService {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
       },
+      timeout: 10000, // 10 second timeout
     });
+  }
+
+  private handleError(error: unknown, context: string): never {
+    if (axios.isAxiosError(error)) {
+      const axiosError = error as AxiosError;
+      const status = axiosError.response?.status;
+      const data = axiosError.response?.data as any;
+
+      console.error(`[TempoService] ${context}:`, {
+        status,
+        message: axiosError.message,
+        data,
+        url: axiosError.config?.url,
+      });
+
+      if (status === 401) {
+        throw new Error('Authentification Tempo échouée. Vérifiez votre token API Tempo.');
+      } else if (status === 403) {
+        throw new Error('Accès refusé à Tempo. Vérifiez vos permissions.');
+      } else if (status === 404) {
+        throw new Error('Ressource Tempo non trouvée. Vérifiez l\'URL de l\'API.');
+      } else if (axiosError.code === 'ENOTFOUND' || axiosError.code === 'ECONNREFUSED') {
+        throw new Error(`Impossible de se connecter à Tempo (${this.baseUrl}). Vérifiez l'URL.`);
+      } else if (axiosError.code === 'ETIMEDOUT') {
+        throw new Error('Timeout lors de la connexion à Tempo. Vérifiez votre connexion réseau.');
+      } else if (data?.errors && Array.isArray(data.errors)) {
+        const errorMessages = data.errors.map((e: any) => e.message || e).join(', ');
+        throw new Error(`Erreur Tempo: ${errorMessages}`);
+      } else if (data?.message) {
+        throw new Error(`Erreur Tempo: ${data.message}`);
+      } else {
+        throw new Error(`Erreur Tempo (${status || 'unknown'}): ${axiosError.message}`);
+      }
+    }
+
+    console.error(`[TempoService] ${context}:`, error);
+    throw new Error(`Erreur inattendue: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 
   async createWorklog(worklog: Omit<TempoWorklog, 'authorAccountId'>): Promise<TempoWorklogResponse> {
@@ -49,9 +89,8 @@ export class TempoService {
         authorAccountId: this.accountId,
       });
       return response.data;
-    } catch (error: any) {
-      console.error('Error creating worklog:', error.response?.data || error.message);
-      throw new Error(`Failed to create worklog: ${error.response?.data?.message || error.message}`);
+    } catch (error) {
+      this.handleError(error, 'createWorklog');
     }
   }
 
@@ -59,9 +98,8 @@ export class TempoService {
     try {
       const response = await this.client.put(`/worklogs/${worklogId}`, worklog);
       return response.data;
-    } catch (error: any) {
-      console.error('Error updating worklog:', error.response?.data || error.message);
-      throw new Error(`Failed to update worklog: ${error.response?.data?.message || error.message}`);
+    } catch (error) {
+      this.handleError(error, `updateWorklog(${worklogId})`);
     }
   }
 
@@ -74,18 +112,16 @@ export class TempoService {
         },
       });
       return response.data.results || [];
-    } catch (error: any) {
-      console.error('Error fetching worklogs:', error.response?.data || error.message);
-      throw new Error(`Failed to fetch worklogs: ${error.response?.data?.message || error.message}`);
+    } catch (error) {
+      this.handleError(error, `getWorklogs(${startDate}, ${endDate})`);
     }
   }
 
   async deleteWorklog(worklogId: number): Promise<void> {
     try {
       await this.client.delete(`/worklogs/${worklogId}`);
-    } catch (error: any) {
-      console.error('Error deleting worklog:', error.response?.data || error.message);
-      throw new Error(`Failed to delete worklog: ${error.response?.data?.message || error.message}`);
+    } catch (error) {
+      this.handleError(error, `deleteWorklog(${worklogId})`);
     }
   }
 }
