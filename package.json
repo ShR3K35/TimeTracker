@@ -54,7 +54,6 @@
           "arch": ["x64"]
         }
       ],
-      "icon": "assets/icon.ico",
       "artifactName": "${productName}-${version}.${ext}"
     },
     "nsis": {
@@ -69,14 +68,12 @@
     },
     "files": [
       "dist/**/*",
-      "node_modules/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "node_modules/better-sqlite3/build/Release",
-        "to": "."
-      }
-    ]
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "nodeGypRebuild": false,
+    "buildDependenciesFromSource": false
   }
 }

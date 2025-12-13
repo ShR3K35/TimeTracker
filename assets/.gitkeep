@@ -1,0 +1,8 @@
+# Placeholder pour l'icône
+
+Ce fichier sert de placeholder. Electron Builder générera un icône par défaut si aucun icône personnalisé n'est fourni.
+
+Pour ajouter un icône personnalisé :
+1. Créer une image PNG 256x256
+2. Convertir en .ico avec plusieurs résolutions
+3. Placer le fichier icon.ico dans ce dossier
