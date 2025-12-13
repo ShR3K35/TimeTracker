@@ -15,6 +15,7 @@ class TimeTrackerApp {
   private timerService: TimerService;
   private adjustmentService: AdjustmentService;
   private notificationTimeout: NodeJS.Timeout | null = null;
+  private isQuitting: boolean = false;
 
   constructor() {
     this.db = new DatabaseManager();
@@ -72,7 +73,7 @@ class TimeTrackerApp {
     });
 
     this.mainWindow.on('close', (event) => {
-      if (!app.isQuitting) {
+      if (!this.isQuitting) {
         event.preventDefault();
         this.mainWindow?.hide();
       }
@@ -108,7 +109,7 @@ class TimeTrackerApp {
       {
         label: 'Quitter',
         click: () => {
-          app.isQuitting = true;
+          this.isQuitting = true;
           app.quit();
         },
       },
@@ -170,12 +171,7 @@ class TimeTrackerApp {
 
     const notification = new Notification({
       title: '🕐 TGD Time Tracker',
-      body: `Travaillez-vous toujours sur :\n${state.currentSession.issue_key} - ${state.currentSession.issue_title}?\n\nTemps écoulé : ${this.timerService.formatTime(state.elapsedSeconds)}`,
-      requireInteraction: true,
-      actions: [
-        { text: 'Oui, continuer', type: 'button' },
-        { text: 'Non, arrêter', type: 'button' },
-      ],
+      body: `Travaillez-vous toujours sur :\n${state.currentSession.issue_key} - ${state.currentSession.issue_title}?\n\nTemps écoulé : ${this.timerService.formatTime(state.elapsedSeconds)}\n\nCliquez sur cette notification pour continuer, ou ne faites rien pour arrêter automatiquement dans 60 secondes.`,
     });
 
     // Set timeout to auto-stop
@@ -188,26 +184,16 @@ class TimeTrackerApp {
       }).show();
     }, timeout * 1000);
 
-    notification.on('action', (event, index) => {
+    notification.on('click', () => {
+      // User clicked the notification, continue timer
       if (this.notificationTimeout) {
         clearTimeout(this.notificationTimeout);
         this.notificationTimeout = null;
       }
-
-      if (index === 1) {
-        // "Non, arrêter" clicked
-        this.timerService.stopTimer();
-        this.mainWindow?.show();
-        this.mainWindow?.webContents.send('show-task-selector');
-      }
-      // If index === 0 ("Oui, continuer"), do nothing, timer continues
     });
 
     notification.on('close', () => {
-      if (this.notificationTimeout) {
-        clearTimeout(this.notificationTimeout);
-        this.notificationTimeout = null;
-      }
+      // Notification closed without interaction, let timeout handle it
     });
 
     notification.show();
