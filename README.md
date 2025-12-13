@@ -19,39 +19,6 @@ L'application cible exclusivement l'environnement Windows et s'intègre avec l'i
 
 ---
 
-## 1.4 Aperçu de l'Application
-
-### Interface Principale
-
-#### Vue Configuration
-![Configuration](docs/screenshots/config-view.png)
-
-*Écran de configuration des APIs Jira et Tempo au premier lancement*
-
-#### Vue Timer
-![Timer Actif](docs/screenshots/timer-active.png)
-
-*Chronomètre en cours d'exécution sur une tâche*
-
-#### Sélecteur de Tâches
-![Sélecteur de Tâches](docs/screenshots/task-selector.png)
-
-*Recherche et sélection de tâches Jira avec tâches récentes*
-
-#### Feuilles de Temps
-![Feuilles de Temps](docs/screenshots/timesheet-view.png)
-
-*Gestion des feuilles de temps avec possibilité d'envoi vers Tempo*
-
-#### Notification Windows
-![Notification](docs/screenshots/notification.png)
-
-*Notification de confirmation toutes les 60 minutes*
-
-> **Note** : Les captures d'écran seront ajoutées après le lancement de l'application. Consultez `docs/screenshots/README.md` pour les instructions de génération des captures.
-
----
-
 ## 2. Spécifications Fonctionnelles
 
 ### 2.1 Architecture Générale
