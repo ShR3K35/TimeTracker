@@ -1,0 +1,105 @@
+.configuration-view {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.configuration-view h2 {
+  font-size: 24px;
+  margin-bottom: 24px;
+  color: #172b4d;
+}
+
+.form-section {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.form-section h3 {
+  font-size: 18px;
+  margin-bottom: 16px;
+  color: #0052cc;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #172b4d;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 10px;
+  border: 2px solid #dfe1e6;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #0052cc;
+}
+
+.submit-button {
+  width: 100%;
+  background-color: #0052cc;
+  color: white;
+  border: none;
+  padding: 12px;
+  border-radius: 4px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.submit-button:hover {
+  background-color: #0065ff;
+}
+
+.submit-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.help-text {
+  background: #f4f5f7;
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 20px;
+}
+
+.help-text h4 {
+  font-size: 14px;
+  margin-bottom: 12px;
+  color: #172b4d;
+}
+
+.help-text ul {
+  list-style: none;
+  padding: 0;
+}
+
+.help-text li {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #5e6c84;
+}
+
+.help-text a {
+  color: #0052cc;
+  text-decoration: none;
+}
+
+.help-text a:hover {
+  text-decoration: underline;
+}
