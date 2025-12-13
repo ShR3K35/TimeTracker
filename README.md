@@ -1,6 +1,8 @@
 # Cahier des Charges
 ## Application de Suivi de Temps - TGD Time Tracker
 
+[![Build Status](https://github.com/ShR3K35/TimeTracker/workflows/Build%20and%20Package%20Application/badge.svg)](https://github.com/ShR3K35/TimeTracker/actions)
+
 ---
 
 ## 1. Présentation du Projet
@@ -398,6 +400,27 @@ Pour chaque entrée :
 2. **Documentation** : Guide d'installation et d'utilisation
 3. **Configuration** : Fichier de paramètres par défaut
 4. **Code source** : Repository Git avec documentation technique
+
+### 9.1 Builds Automatiques
+
+L'application est automatiquement buildée via **GitHub Actions** à chaque push :
+
+**📥 Télécharger un build**
+- Allez sur [Actions](https://github.com/ShR3K35/TimeTracker/actions)
+- Sélectionnez le workflow run de votre branche
+- Téléchargez l'artifact dans la section **Artifacts**
+
+**Types d'exécutables disponibles :**
+- **Setup** (`*-Setup.exe`) : Installateur Windows avec raccourcis
+- **Portable** (`*-Portable.exe`) : Exécutable autonome sans installation
+
+**Naming :**
+- **Branches** : `TGD-Time-Tracker-<nom-branche>-<type>.exe`
+  - Ex: `TGD-Time-Tracker-main-Setup.exe`
+- **Tags** : `TGD-Time-Tracker-<type>.exe`
+  - Ex: `TGD-Time-Tracker-Setup.exe` (pour tag v1.0.0)
+
+> Consultez [.github/workflows/README.md](.github/workflows/README.md) pour plus de détails sur la CI/CD.
 
 ---
 

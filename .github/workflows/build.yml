@@ -1,0 +1,96 @@
+name: Build and Package Application
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Package application
+        run: npm run package:win
+
+      - name: Determine naming strategy
+        id: naming
+        shell: bash
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            # C'est un tag (ex: v1.0.0)
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            VERSION=${TAG_NAME#v}
+            echo "prefix=TGD-Time-Tracker" >> $GITHUB_OUTPUT
+            echo "suffix=" >> $GITHUB_OUTPUT
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "artifact_name=TGD-Time-Tracker-${VERSION}" >> $GITHUB_OUTPUT
+          else
+            # C'est une branche
+            BRANCH_NAME=${GITHUB_REF#refs/heads/}
+            # Remplacer les caractères spéciaux par des tirets
+            SAFE_BRANCH=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g')
+            echo "prefix=TGD-Time-Tracker" >> $GITHUB_OUTPUT
+            echo "suffix=-${SAFE_BRANCH}" >> $GITHUB_OUTPUT
+            echo "version=1.0.0" >> $GITHUB_OUTPUT
+            echo "artifact_name=TGD-Time-Tracker-${SAFE_BRANCH}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Rename executables
+        shell: bash
+        run: |
+          cd release
+
+          PREFIX="${{ steps.naming.outputs.prefix }}"
+          SUFFIX="${{ steps.naming.outputs.suffix }}"
+
+          # Renommer l'installateur NSIS
+          if [ -f "TGD Time Tracker-1.0.0-Setup.exe" ]; then
+            mv "TGD Time Tracker-1.0.0-Setup.exe" "${PREFIX}${SUFFIX}-Setup.exe"
+            echo "✓ Renamed installer to: ${PREFIX}${SUFFIX}-Setup.exe"
+          fi
+
+          # Renommer l'exécutable portable
+          if [ -f "TGD Time Tracker-1.0.0-Portable.exe" ]; then
+            mv "TGD Time Tracker-1.0.0-Portable.exe" "${PREFIX}${SUFFIX}-Portable.exe"
+            echo "✓ Renamed portable to: ${PREFIX}${SUFFIX}-Portable.exe"
+          fi
+
+          # Lister les fichiers finaux
+          echo "=== Final files ==="
+          ls -lh *.exe
+
+      - name: Upload executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.naming.outputs.artifact_name }}
+          path: |
+            release/*.exe
+          retention-days: 90
+
+      - name: Create Release (for tags)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release/*.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
