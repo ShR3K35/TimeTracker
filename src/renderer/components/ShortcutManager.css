@@ -1,0 +1,306 @@
+.shortcut-manager {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-width: 800px;
+  margin: 20px auto;
+  overflow: hidden;
+}
+
+.shortcut-header {
+  background: #0052cc;
+  color: white;
+  padding: 20px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.shortcut-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.close-button {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  font-size: 24px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.close-button:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.shortcut-content {
+  padding: 24px;
+}
+
+.shortcut-info {
+  background: #f4f5f7;
+  padding: 16px;
+  border-radius: 6px;
+  margin-bottom: 24px;
+}
+
+.shortcut-info p {
+  margin: 8px 0;
+  font-size: 14px;
+  color: #172b4d;
+}
+
+.shortcut-info p:first-child {
+  margin-top: 0;
+}
+
+.shortcut-info p:last-child {
+  margin-bottom: 0;
+}
+
+.message {
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.error-message {
+  background: #ffebe6;
+  color: #bf2600;
+  border: 1px solid #ff8f73;
+}
+
+.success-message {
+  background: #e3fcef;
+  color: #006644;
+  border: 1px solid #79f2c0;
+}
+
+.no-favorites {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6b778c;
+}
+
+.favorites-list h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #172b4d;
+  margin-bottom: 16px;
+}
+
+.favorite-item {
+  background: white;
+  border: 2px solid #dfe1e6;
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.favorite-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.favorite-key {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0052cc;
+  margin-bottom: 4px;
+}
+
+.favorite-title {
+  font-size: 14px;
+  color: #172b4d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shortcut-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shortcut-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+kbd {
+  background: #f4f5f7;
+  border: 1px solid #dfe1e6;
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: #172b4d;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.toggle-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle-button.enabled {
+  background: #36b37e;
+  color: white;
+}
+
+.toggle-button.enabled:hover {
+  background: #2a9d67;
+}
+
+.toggle-button.disabled {
+  background: #ff5630;
+  color: white;
+}
+
+.toggle-button.disabled:hover {
+  background: #de350b;
+}
+
+.shortcut-input {
+  width: 250px;
+  padding: 8px 12px;
+  border: 2px solid #0052cc;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+}
+
+.shortcut-input:focus {
+  outline: none;
+  border-color: #0065ff;
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.1);
+}
+
+.add-button {
+  background: #0052cc;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.add-button:hover {
+  background: #0065ff;
+}
+
+.save-button {
+  background: #36b37e;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.save-button:hover {
+  background: #2a9d67;
+}
+
+.save-button:disabled {
+  background: #cccccc;
+  cursor: not-allowed;
+}
+
+.cancel-button {
+  background: #f4f5f7;
+  color: #172b4d;
+  border: 1px solid #dfe1e6;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.cancel-button:hover {
+  background: #dfe1e6;
+}
+
+.remove-button {
+  background: #ff5630;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.remove-button:hover {
+  background: #de350b;
+}
+
+.remove-button:disabled {
+  background: #cccccc;
+  cursor: not-allowed;
+}
+
+.shortcuts-summary {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 2px solid #dfe1e6;
+}
+
+.shortcuts-summary h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #172b4d;
+  margin-bottom: 12px;
+}
+
+.shortcuts-summary ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.shortcuts-summary li {
+  padding: 8px 0;
+  font-size: 14px;
+  color: #172b4d;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
