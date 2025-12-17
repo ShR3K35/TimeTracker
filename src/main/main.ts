@@ -5,6 +5,7 @@ import { JiraService } from './services/jira.service';
 import { TempoService } from './services/tempo.service';
 import { TimerService } from './services/timer.service';
 import { AdjustmentService } from './services/adjustment.service';
+import { ShortcutService } from './services/shortcut.service';
 
 class TimeTrackerApp {
   private mainWindow: BrowserWindow | null = null;
@@ -14,6 +15,7 @@ class TimeTrackerApp {
   private tempoService: TempoService | null = null;
   private timerService: TimerService;
   private adjustmentService: AdjustmentService;
+  private shortcutService: ShortcutService;
   private notificationTimeout: NodeJS.Timeout | null = null;
   private isQuitting: boolean = false;
 
@@ -26,7 +28,10 @@ class TimeTrackerApp {
     const maxDailyHours = parseFloat(this.db.getConfig('max_daily_hours') || '7.5');
     this.adjustmentService = new AdjustmentService(this.db, maxDailyHours);
 
+    this.shortcutService = new ShortcutService(this.db);
+
     this.setupTimerListeners();
+    this.setupShortcutListeners();
     this.setupIpcHandlers();
   }
 
@@ -35,6 +40,7 @@ class TimeTrackerApp {
     this.createWindow();
     this.createTray();
     this.checkPendingAdjustments();
+    this.shortcutService.initialize(); // Initialize keyboard shortcuts
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -45,6 +51,11 @@ class TimeTrackerApp {
     app.on('window-all-closed', () => {
       // Don't quit on window close, keep running in background
       // app.quit() is only called when user explicitly quits from tray
+    });
+
+    app.on('will-quit', () => {
+      // Unregister all shortcuts before quitting
+      this.shortcutService.unregisterAll();
     });
   }
 
@@ -141,6 +152,22 @@ class TimeTrackerApp {
 
     this.timerService.on('notification-required', () => {
       this.showConfirmationNotification();
+    });
+  }
+
+  private setupShortcutListeners() {
+    this.shortcutService.on('shortcut-triggered', (event) => {
+      // Start timer when shortcut is triggered
+      this.timerService.startTimer(event.issueKey, event.issueTitle, event.issueType);
+
+      // Show notification
+      new Notification({
+        title: 'TGD Time Tracker',
+        body: `Chronomètre démarré sur ${event.issueKey}\n${event.issueTitle}`,
+      }).show();
+
+      // Show window
+      this.mainWindow?.show();
     });
   }
 
@@ -374,6 +401,78 @@ class TimeTrackerApp {
     ipcMain.handle('recent:get', async () => {
       const limit = parseInt(this.db.getConfig('recent_issues_count') || '10');
       return this.db.getRecentIssues(limit);
+    });
+
+    // Favorite tasks
+    ipcMain.handle('favorites:get', async () => {
+      return this.db.getFavoriteTasks();
+    });
+
+    ipcMain.handle('favorites:add', async (_, task: { issueKey: string; issueTitle: string; issueType: string; position: number }) => {
+      try {
+        this.db.addFavoriteTask({
+          issue_key: task.issueKey,
+          issue_title: task.issueTitle,
+          issue_type: task.issueType,
+          position: task.position,
+        });
+        return { success: true };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('favorites:remove', async (_, issueKey: string) => {
+      this.db.removeFavoriteTask(issueKey);
+    });
+
+    ipcMain.handle('favorites:is-favorite', async (_, issueKey: string) => {
+      return this.db.isFavoriteTask(issueKey);
+    });
+
+    ipcMain.handle('favorites:update-position', async (_, issueKey: string, position: number) => {
+      this.db.updateFavoriteTaskPosition(issueKey, position);
+    });
+
+    // Keyboard shortcuts
+    ipcMain.handle('shortcuts:get', async () => {
+      return this.db.getKeyboardShortcuts();
+    });
+
+    ipcMain.handle('shortcuts:add', async (_, shortcut: { accelerator: string; issueKey: string; issueTitle: string; issueType: string; enabled: boolean }) => {
+      try {
+        this.db.addKeyboardShortcut({
+          accelerator: shortcut.accelerator,
+          issue_key: shortcut.issueKey,
+          issue_title: shortcut.issueTitle,
+          issue_type: shortcut.issueType,
+          enabled: shortcut.enabled,
+        });
+
+        // Re-initialize shortcuts to apply changes
+        this.shortcutService.initialize();
+
+        return { success: true };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('shortcuts:remove', async (_, accelerator: string) => {
+      this.db.removeKeyboardShortcut(accelerator);
+      this.shortcutService.unregisterShortcut(accelerator);
+    });
+
+    ipcMain.handle('shortcuts:update', async (_, accelerator: string, updates: any) => {
+      this.db.updateKeyboardShortcut(accelerator, updates);
+      this.shortcutService.initialize(); // Re-initialize to apply changes
+    });
+
+    ipcMain.handle('shortcuts:validate', async (_, accelerator: string) => {
+      return {
+        isValid: ShortcutService.isValidAccelerator(accelerator),
+        isAvailable: this.shortcutService.isShortcutAvailable(accelerator),
+      };
     });
   }
 }

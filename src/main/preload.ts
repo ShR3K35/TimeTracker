@@ -68,6 +68,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
     get: () => ipcRenderer.invoke('recent:get'),
   },
 
+  // Favorite tasks
+  favorites: {
+    get: () => ipcRenderer.invoke('favorites:get'),
+    add: (task: { issueKey: string; issueTitle: string; issueType: string; position: number }) =>
+      ipcRenderer.invoke('favorites:add', task),
+    remove: (issueKey: string) => ipcRenderer.invoke('favorites:remove', issueKey),
+    isFavorite: (issueKey: string) => ipcRenderer.invoke('favorites:is-favorite', issueKey),
+    updatePosition: (issueKey: string, position: number) =>
+      ipcRenderer.invoke('favorites:update-position', issueKey, position),
+  },
+
+  // Keyboard shortcuts
+  shortcuts: {
+    get: () => ipcRenderer.invoke('shortcuts:get'),
+    add: (shortcut: { accelerator: string; issueKey: string; issueTitle: string; issueType: string; enabled: boolean }) =>
+      ipcRenderer.invoke('shortcuts:add', shortcut),
+    remove: (accelerator: string) => ipcRenderer.invoke('shortcuts:remove', accelerator),
+    update: (accelerator: string, updates: any) =>
+      ipcRenderer.invoke('shortcuts:update', accelerator, updates),
+    validate: (accelerator: string) => ipcRenderer.invoke('shortcuts:validate', accelerator),
+  },
+
   // UI events
   on: {
     showTaskSelector: (callback: () => void) => {
