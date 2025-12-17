@@ -42,6 +42,26 @@ export interface RecentIssue {
   last_used_at: string;
 }
 
+export interface FavoriteTask {
+  id: number;
+  issue_key: string;
+  issue_title: string;
+  issue_type: string;
+  position: number;
+  created_at: string;
+}
+
+export interface KeyboardShortcut {
+  id: number;
+  accelerator: string;
+  issue_key: string;
+  issue_title: string;
+  issue_type: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export class DatabaseManager {
   private db: Database.Database;
 
@@ -98,10 +118,32 @@ export class DatabaseManager {
         last_used_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS FavoriteTask (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        issue_key TEXT NOT NULL UNIQUE,
+        issue_title TEXT NOT NULL,
+        issue_type TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS KeyboardShortcut (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        accelerator TEXT NOT NULL UNIQUE,
+        issue_key TEXT NOT NULL,
+        issue_title TEXT NOT NULL,
+        issue_type TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE INDEX IF NOT EXISTS idx_worksession_date ON WorkSession(date(start_time));
       CREATE INDEX IF NOT EXISTS idx_worksession_status ON WorkSession(status);
       CREATE INDEX IF NOT EXISTS idx_dailysummary_date ON DailySummary(date);
       CREATE INDEX IF NOT EXISTS idx_recentissue_last_used ON RecentIssue(last_used_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_favoritetask_position ON FavoriteTask(position);
+      CREATE INDEX IF NOT EXISTS idx_keyboardshortcut_enabled ON KeyboardShortcut(enabled);
     `);
 
     // Insert default configuration
@@ -258,6 +300,128 @@ export class DatabaseManager {
     return this.db
       .prepare('SELECT * FROM RecentIssue ORDER BY last_used_at DESC LIMIT ?')
       .all(limit) as RecentIssue[];
+  }
+
+  // FavoriteTask methods
+  addFavoriteTask(task: Omit<FavoriteTask, 'id' | 'created_at'>): void {
+    // Check if we already have 10 favorites
+    const count = this.db
+      .prepare('SELECT COUNT(*) as count FROM FavoriteTask')
+      .get() as { count: number };
+
+    if (count.count >= 10) {
+      throw new Error('Maximum 10 favorite tasks allowed');
+    }
+
+    this.db
+      .prepare(
+        `INSERT INTO FavoriteTask (issue_key, issue_title, issue_type, position)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(issue_key) DO UPDATE SET
+         issue_title = excluded.issue_title,
+         issue_type = excluded.issue_type,
+         position = excluded.position`
+      )
+      .run(task.issue_key, task.issue_title, task.issue_type, task.position);
+  }
+
+  removeFavoriteTask(issueKey: string): void {
+    this.db
+      .prepare('DELETE FROM FavoriteTask WHERE issue_key = ?')
+      .run(issueKey);
+  }
+
+  getFavoriteTasks(): FavoriteTask[] {
+    return this.db
+      .prepare('SELECT * FROM FavoriteTask ORDER BY position')
+      .all() as FavoriteTask[];
+  }
+
+  updateFavoriteTaskPosition(issueKey: string, position: number): void {
+    this.db
+      .prepare('UPDATE FavoriteTask SET position = ? WHERE issue_key = ?')
+      .run(position, issueKey);
+  }
+
+  isFavoriteTask(issueKey: string): boolean {
+    const row = this.db
+      .prepare('SELECT COUNT(*) as count FROM FavoriteTask WHERE issue_key = ?')
+      .get(issueKey) as { count: number };
+    return row.count > 0;
+  }
+
+  // KeyboardShortcut methods
+  addKeyboardShortcut(shortcut: Omit<KeyboardShortcut, 'id' | 'created_at' | 'updated_at'>): void {
+    this.db
+      .prepare(
+        `INSERT INTO KeyboardShortcut (accelerator, issue_key, issue_title, issue_type, enabled)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(accelerator) DO UPDATE SET
+         issue_key = excluded.issue_key,
+         issue_title = excluded.issue_title,
+         issue_type = excluded.issue_type,
+         enabled = excluded.enabled,
+         updated_at = CURRENT_TIMESTAMP`
+      )
+      .run(shortcut.accelerator, shortcut.issue_key, shortcut.issue_title, shortcut.issue_type, shortcut.enabled ? 1 : 0);
+  }
+
+  removeKeyboardShortcut(accelerator: string): void {
+    this.db
+      .prepare('DELETE FROM KeyboardShortcut WHERE accelerator = ?')
+      .run(accelerator);
+  }
+
+  getKeyboardShortcuts(): KeyboardShortcut[] {
+    const shortcuts = this.db
+      .prepare('SELECT * FROM KeyboardShortcut ORDER BY created_at')
+      .all() as any[];
+
+    // Convert enabled from INTEGER to boolean
+    return shortcuts.map(s => ({
+      ...s,
+      enabled: s.enabled === 1
+    }));
+  }
+
+  getEnabledKeyboardShortcuts(): KeyboardShortcut[] {
+    const shortcuts = this.db
+      .prepare('SELECT * FROM KeyboardShortcut WHERE enabled = 1 ORDER BY created_at')
+      .all() as any[];
+
+    // Convert enabled from INTEGER to boolean
+    return shortcuts.map(s => ({
+      ...s,
+      enabled: s.enabled === 1
+    }));
+  }
+
+  updateKeyboardShortcut(accelerator: string, updates: Partial<KeyboardShortcut>): void {
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (updates.issue_key !== undefined) {
+      fields.push('issue_key = ?');
+      values.push(updates.issue_key);
+    }
+    if (updates.issue_title !== undefined) {
+      fields.push('issue_title = ?');
+      values.push(updates.issue_title);
+    }
+    if (updates.issue_type !== undefined) {
+      fields.push('issue_type = ?');
+      values.push(updates.issue_type);
+    }
+    if (updates.enabled !== undefined) {
+      fields.push('enabled = ?');
+      values.push(updates.enabled ? 1 : 0);
+    }
+
+    if (fields.length > 0) {
+      this.db
+        .prepare(`UPDATE KeyboardShortcut SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE accelerator = ?`)
+        .run(...values, accelerator);
+    }
   }
 
   close(): void {

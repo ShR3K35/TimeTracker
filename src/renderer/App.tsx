@@ -4,8 +4,9 @@ import ConfigurationView from './components/ConfigurationView';
 import TimerView from './components/TimerView';
 import TaskSelector from './components/TaskSelector';
 import TimesheetView from './components/TimesheetView';
+import ShortcutManager from './components/ShortcutManager';
 
-type View = 'config' | 'timer' | 'tasks' | 'timesheet';
+type View = 'config' | 'timer' | 'tasks' | 'timesheet' | 'shortcuts';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('config');
@@ -83,6 +84,12 @@ function App() {
                 Feuilles de temps
               </button>
               <button
+                className={currentView === 'shortcuts' ? 'active' : ''}
+                onClick={() => setCurrentView('shortcuts')}
+              >
+                Raccourcis
+              </button>
+              <button
                 className={currentView === 'config' ? 'active' : ''}
                 onClick={() => setCurrentView('config')}
               >
@@ -108,6 +115,9 @@ function App() {
         )}
         {currentView === 'timesheet' && isConfigured && (
           <TimesheetView />
+        )}
+        {currentView === 'shortcuts' && isConfigured && (
+          <ShortcutManager onClose={() => setCurrentView('timer')} />
         )}
       </main>
     </div>

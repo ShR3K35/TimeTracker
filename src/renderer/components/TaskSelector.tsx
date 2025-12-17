@@ -9,12 +9,32 @@ function TaskSelector({ onTaskSelected }: TaskSelectorProps) {
   const [searchText, setSearchText] = useState('');
   const [recentIssues, setRecentIssues] = useState<any[]>([]);
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [favoriteIssues, setFavoriteIssues] = useState<any[]>([]);
+  const [favoriteKeys, setFavoriteKeys] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     loadRecentIssues();
+    loadFavorites();
   }, []);
+
+  const loadFavorites = async () => {
+    try {
+      const favorites = await window.electronAPI.favorites.get();
+      const favoriteIssues = favorites.map((fav: any) => ({
+        key: fav.issue_key,
+        fields: {
+          summary: fav.issue_title,
+          issuetype: { name: fav.issue_type },
+        },
+      }));
+      setFavoriteIssues(favoriteIssues);
+      setFavoriteKeys(new Set(favorites.map((f: any) => f.issue_key)));
+    } catch (err) {
+      console.error('Error loading favorites:', err);
+    }
+  };
 
   const loadRecentIssues = async () => {
     try {
@@ -76,7 +96,53 @@ function TaskSelector({ onTaskSelected }: TaskSelectorProps) {
     return typeMap[type] || '📋';
   };
 
-  const renderIssueList = (issues: any[], title: string) => {
+  const toggleFavorite = async (e: React.MouseEvent, issue: any) => {
+    e.stopPropagation(); // Prevent triggering task selection
+
+    const issueKey = issue.key;
+    const isFavorite = favoriteKeys.has(issueKey);
+
+    try {
+      if (isFavorite) {
+        // Remove from favorites
+        await window.electronAPI.favorites.remove(issueKey);
+        setFavoriteKeys(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(issueKey);
+          return newSet;
+        });
+        setFavoriteIssues(prev => prev.filter(f => f.key !== issueKey));
+      } else {
+        // Add to favorites
+        const favorites = await window.electronAPI.favorites.get();
+        if (favorites.length >= 10) {
+          setError('Maximum de 10 tâches favorites atteint');
+          setTimeout(() => setError(''), 3000);
+          return;
+        }
+
+        const result = await window.electronAPI.favorites.add({
+          issueKey: issue.key,
+          issueTitle: issue.fields.summary,
+          issueType: issue.fields.issuetype.name,
+          position: favorites.length,
+        });
+
+        if (result.success) {
+          setFavoriteKeys(prev => new Set(prev).add(issueKey));
+          await loadFavorites();
+        } else {
+          setError(result.error || 'Erreur lors de l\'ajout aux favoris');
+          setTimeout(() => setError(''), 3000);
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de la modification des favoris');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const renderIssueList = (issues: any[], title: string, showFavoriteButton: boolean = true) => {
     if (issues.length === 0) return null;
 
     return (
@@ -100,6 +166,15 @@ function TaskSelector({ onTaskSelected }: TaskSelectorProps) {
                 <span className="issue-type-badge">
                   {issue.fields.issuetype.name}
                 </span>
+                {showFavoriteButton && (
+                  <button
+                    className="favorite-button"
+                    onClick={(e) => toggleFavorite(e, issue)}
+                    title={favoriteKeys.has(issue.key) ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                  >
+                    {favoriteKeys.has(issue.key) ? '★' : '☆'}
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -130,10 +205,13 @@ function TaskSelector({ onTaskSelected }: TaskSelectorProps) {
 
       {error && <div className="error-message">{error}</div>}
 
+      {/* Always show favorites at the top if not searching */}
+      {!searchText && favoriteIssues.length > 0 && renderIssueList(favoriteIssues, '⭐ Tâches favorites', false)}
+
       {searchResults.length > 0 ? (
         renderIssueList(searchResults, 'Résultats de recherche')
       ) : (
-        renderIssueList(recentIssues, 'Tâches récentes')
+        !searchText && renderIssueList(recentIssues, 'Tâches récentes')
       )}
 
       {!loading && searchResults.length === 0 && searchText && (

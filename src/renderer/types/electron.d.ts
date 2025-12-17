@@ -58,6 +58,22 @@ export interface ElectronAPI {
     get: () => Promise<any[]>;
   };
 
+  favorites: {
+    get: () => Promise<any[]>;
+    add: (task: { issueKey: string; issueTitle: string; issueType: string; position: number }) => Promise<{ success: boolean; error?: string }>;
+    remove: (issueKey: string) => Promise<void>;
+    isFavorite: (issueKey: string) => Promise<boolean>;
+    updatePosition: (issueKey: string, position: number) => Promise<void>;
+  };
+
+  shortcuts: {
+    get: () => Promise<any[]>;
+    add: (shortcut: { accelerator: string; issueKey: string; issueTitle: string; issueType: string; enabled: boolean }) => Promise<{ success: boolean; error?: string }>;
+    remove: (accelerator: string) => Promise<void>;
+    update: (accelerator: string, updates: any) => Promise<void>;
+    validate: (accelerator: string) => Promise<{ isValid: boolean; isAvailable: boolean }>;
+  };
+
   on: {
     showTaskSelector: (callback: () => void) => void;
   };
