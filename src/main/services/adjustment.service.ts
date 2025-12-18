@@ -10,6 +10,9 @@ export interface TaskGroup {
   issueKey: string;
   issueTitle: string;
   issueType: string;
+  activityId: number | null;
+  activityName: string | null;
+  activityValue: string | null;
   sessions: WorkSession[];
   originalTotalSeconds: number;
   adjustedTotalSeconds: number;
@@ -44,22 +47,28 @@ export class AdjustmentService {
   }
 
   /**
-   * Group sessions by issue key
+   * Group sessions by issue key AND activity
    */
   private groupSessionsByTask(sessions: WorkSession[]): TaskGroup[] {
     const groupMap = new Map<string, TaskGroup>();
 
     for (const session of sessions) {
-      const existing = groupMap.get(session.issue_key);
+      // Group key includes both issue_key and activity_id
+      const groupKey = `${session.issue_key}|${session.activity_id || 'none'}`;
+      const existing = groupMap.get(groupKey);
+
       if (existing) {
         existing.sessions.push(session);
         existing.originalTotalSeconds += session.duration_seconds;
         existing.adjustedTotalSeconds += session.duration_seconds;
       } else {
-        groupMap.set(session.issue_key, {
+        groupMap.set(groupKey, {
           issueKey: session.issue_key,
           issueTitle: session.issue_title,
           issueType: session.issue_type,
+          activityId: session.activity_id,
+          activityName: session.activity_name,
+          activityValue: session.activity_value,
           sessions: [session],
           originalTotalSeconds: session.duration_seconds,
           adjustedTotalSeconds: session.duration_seconds,
@@ -332,5 +341,103 @@ export class AdjustmentService {
     const hours = Math.floor(minutes / 60);
     const mins = Math.round(minutes % 60);
     return `${hours}h${mins.toString().padStart(2, '0')}`;
+  }
+
+  /**
+   * Reopen a sent day - reset status to allow editing
+   * Note: This only resets local status, does not delete worklogs from Tempo
+   */
+  reopenDay(date: string): void {
+    const sessions = this.db.getWorkSessionsByDate(date);
+
+    // Reset all sessions to 'draft' status
+    for (const session of sessions) {
+      if (session.status === 'sent') {
+        this.db.updateWorkSession(session.id, {
+          status: 'draft',
+          tempo_worklog_id: null,
+        });
+      }
+    }
+
+    // Reset daily summary status to 'pending'
+    this.db.createOrUpdateDailySummary({
+      date,
+      total_minutes: sessions.reduce((sum, s) => sum + s.duration_seconds / 60, 0),
+      adjusted_minutes: null,
+      status: 'pending',
+      sent_at: null,
+    });
+
+    console.log(`[AdjustmentService] Day ${date} reopened for editing`);
+  }
+
+  /**
+   * Update duration for a specific task group (all sessions with same issue_key and activity_id on a date)
+   * Distributes the new duration proportionally among sessions
+   */
+  updateTaskGroupDuration(date: string, issueKey: string, newDurationSeconds: number, activityId?: number | null): void {
+    const allSessions = this.db.getWorkSessionsByDate(date);
+    const sessions = allSessions.filter(s => {
+      if (s.issue_key !== issueKey) return false;
+      // If activityId is provided, filter by it; otherwise match sessions with null activity
+      if (activityId !== undefined) {
+        return s.activity_id === activityId;
+      }
+      return true; // Backwards compatibility: if no activityId provided, match all for this issueKey
+    });
+
+    if (sessions.length === 0) {
+      throw new Error(`Aucune session trouvée pour ${issueKey} le ${date}`);
+    }
+
+    const originalTotal = sessions.reduce((sum, s) => sum + s.duration_seconds, 0);
+
+    if (originalTotal === 0) {
+      // If original total is 0, distribute evenly
+      const perSession = Math.round(newDurationSeconds / sessions.length);
+      for (const session of sessions) {
+        this.db.updateWorkSession(session.id, {
+          duration_seconds: perSession,
+          status: 'adjusted',
+        });
+      }
+    } else {
+      // Distribute proportionally
+      let remaining = newDurationSeconds;
+      for (let i = 0; i < sessions.length; i++) {
+        const session = sessions[i];
+        const isLast = i === sessions.length - 1;
+
+        let newDuration: number;
+        if (isLast) {
+          // Last session gets the remainder to avoid rounding errors
+          newDuration = remaining;
+        } else {
+          const proportion = session.duration_seconds / originalTotal;
+          newDuration = Math.round(newDurationSeconds * proportion);
+          remaining -= newDuration;
+        }
+
+        this.db.updateWorkSession(session.id, {
+          duration_seconds: newDuration,
+          status: 'adjusted',
+        });
+      }
+    }
+
+    // Update daily summary
+    const updatedSessions = this.db.getWorkSessionsByDate(date);
+    const totalMinutes = updatedSessions.reduce((sum, s) => sum + s.duration_seconds / 60, 0);
+
+    this.db.createOrUpdateDailySummary({
+      date,
+      total_minutes: totalMinutes,
+      adjusted_minutes: totalMinutes,
+      status: 'ready',
+      sent_at: null,
+    });
+
+    console.log(`[AdjustmentService] Updated ${issueKey} on ${date} to ${newDurationSeconds}s`);
   }
 }

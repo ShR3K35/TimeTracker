@@ -1,20 +1,29 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 
-export interface TempoWorklog {
-  tempoWorklogId?: number;
-  issueKey: string;
+export interface TempoWorklogAttribute {
+  key: string;
+  value: string;
+}
+
+export interface TempoWorklogInput {
+  issueId: number;
   timeSpentSeconds: number;
-  startDate: string;
-  startTime?: string;
+  startDate: string; // Format: "yyyy-MM-dd"
+  startTime?: string; // Format: "HH:mm:ss"
   description?: string;
-  authorAccountId: string;
+  authorAccountId?: string; // Will be filled by service
+  attributes?: TempoWorklogAttribute[];
 }
 
 export interface TempoWorklogResponse {
   self: string;
   tempoWorklogId: number;
-  issueKey: string;
+  issue: {
+    self: string;
+    id: number;
+  };
   timeSpentSeconds: number;
+  billableSeconds: number;
   startDate: string;
   startTime: string;
   description: string;
@@ -23,6 +32,13 @@ export interface TempoWorklogResponse {
   author: {
     accountId: string;
     self: string;
+  };
+  attributes: {
+    self: string;
+    values: Array<{
+      key: string;
+      value: string;
+    }>;
   };
 }
 
@@ -82,19 +98,46 @@ export class TempoService {
     throw new Error(`Erreur inattendue: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 
-  async createWorklog(worklog: Omit<TempoWorklog, 'authorAccountId'>): Promise<TempoWorklogResponse> {
+  async createWorklog(worklog: TempoWorklogInput): Promise<TempoWorklogResponse> {
     try {
-      const response = await this.client.post('/worklogs', {
-        ...worklog,
+      const payload: any = {
+        issueId: worklog.issueId,
+        timeSpentSeconds: worklog.timeSpentSeconds,
+        startDate: worklog.startDate,
+        startTime: worklog.startTime || '09:00:00',
         authorAccountId: this.accountId,
+      };
+
+      // Add description if provided
+      if (worklog.description) {
+        payload.description = worklog.description;
+      }
+
+      // Add attributes if provided
+      if (worklog.attributes && worklog.attributes.length > 0) {
+        payload.attributes = worklog.attributes;
+      }
+
+      console.log('[TempoService] createWorklog request:', {
+        url: `${this.baseUrl}/worklogs`,
+        method: 'POST',
+        payload: JSON.stringify(payload, null, 2),
       });
+
+      const response = await this.client.post('/worklogs', payload);
+
+      console.log('[TempoService] createWorklog response:', {
+        status: response.status,
+        data: JSON.stringify(response.data, null, 2),
+      });
+
       return response.data;
     } catch (error) {
       this.handleError(error, 'createWorklog');
     }
   }
 
-  async updateWorklog(worklogId: number, worklog: Partial<TempoWorklog>): Promise<TempoWorklogResponse> {
+  async updateWorklog(worklogId: number, worklog: Partial<TempoWorklogInput>): Promise<TempoWorklogResponse> {
     try {
       const response = await this.client.put(`/worklogs/${worklogId}`, worklog);
       return response.data;

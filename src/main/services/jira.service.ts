@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 
 export interface JiraIssue {
+  id: string;
   key: string;
   fields: {
     summary: string;

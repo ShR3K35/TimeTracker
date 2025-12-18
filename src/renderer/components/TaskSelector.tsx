@@ -2,7 +2,15 @@ import React, { useState, useEffect } from 'react';
 import './TaskSelector.css';
 
 interface TaskSelectorProps {
-  onTaskSelected: (issue: any) => void;
+  onTaskSelected: (issue: any, activityId?: number, activityName?: string, activityValue?: string) => void;
+}
+
+interface TempoActivity {
+  id: number;
+  tempo_id: number;
+  name: string;
+  value: string;
+  position: number;
 }
 
 function TaskSelector({ onTaskSelected }: TaskSelectorProps) {
@@ -13,11 +21,28 @@ function TaskSelector({ onTaskSelected }: TaskSelectorProps) {
   const [favoriteKeys, setFavoriteKeys] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [activities, setActivities] = useState<TempoActivity[]>([]);
+  const [selectedIssue, setSelectedIssue] = useState<any | null>(null);
+  const [selectedActivityId, setSelectedActivityId] = useState<number | null>(null);
 
   useEffect(() => {
     loadRecentIssues();
     loadFavorites();
+    loadActivities();
   }, []);
+
+  const loadActivities = async () => {
+    try {
+      const acts = await window.electronAPI.activities.get();
+      setActivities(acts);
+      // Set default activity if available
+      if (acts.length > 0) {
+        setSelectedActivityId(acts[0].tempo_id);
+      }
+    } catch (err) {
+      console.error('Error loading activities:', err);
+    }
+  };
 
   const loadFavorites = async () => {
     try {
@@ -142,6 +167,29 @@ function TaskSelector({ onTaskSelected }: TaskSelectorProps) {
     }
   };
 
+  const handleIssueClick = (issue: any) => {
+    if (activities.length > 0) {
+      // Show activity selection
+      setSelectedIssue(issue);
+      setSelectedActivityId(activities[0].tempo_id);
+    } else {
+      // No activities configured, start timer directly
+      onTaskSelected(issue);
+    }
+  };
+
+  const handleStartWithActivity = () => {
+    if (!selectedIssue) return;
+
+    const activity = activities.find(a => a.tempo_id === selectedActivityId);
+    onTaskSelected(selectedIssue, selectedActivityId || undefined, activity?.name, activity?.value);
+    setSelectedIssue(null);
+  };
+
+  const handleCancelActivitySelection = () => {
+    setSelectedIssue(null);
+  };
+
   const renderIssueList = (issues: any[], title: string, showFavoriteButton: boolean = true) => {
     if (issues.length === 0) return null;
 
@@ -153,7 +201,7 @@ function TaskSelector({ onTaskSelected }: TaskSelectorProps) {
             <div
               key={issue.key}
               className="issue-item"
-              onClick={() => onTaskSelected(issue)}
+              onClick={() => handleIssueClick(issue)}
             >
               <div className="issue-type-icon">
                 {getIssueTypeEmoji(issue.fields.issuetype.name)}
@@ -217,6 +265,43 @@ function TaskSelector({ onTaskSelected }: TaskSelectorProps) {
       {!loading && searchResults.length === 0 && searchText && (
         <div className="no-results">
           <p>Aucune tâche trouvée pour "{searchText}"</p>
+        </div>
+      )}
+
+      {/* Activity Selection Modal */}
+      {selectedIssue && (
+        <div className="activity-modal-overlay" onClick={handleCancelActivitySelection}>
+          <div className="activity-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Démarrer le chronomètre</h3>
+            <div className="selected-task-info">
+              <span className="selected-task-key">{selectedIssue.key}</span>
+              <span className="selected-task-title">{selectedIssue.fields.summary}</span>
+            </div>
+
+            <div className="activity-selection">
+              <label>Activité :</label>
+              <div className="activity-buttons">
+                {activities.map((activity) => (
+                  <button
+                    key={activity.tempo_id}
+                    className={`activity-button ${selectedActivityId === activity.tempo_id ? 'selected' : ''}`}
+                    onClick={() => setSelectedActivityId(activity.tempo_id)}
+                  >
+                    {activity.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="activity-modal-actions">
+              <button className="cancel-button" onClick={handleCancelActivitySelection}>
+                Annuler
+              </button>
+              <button className="start-button" onClick={handleStartWithActivity}>
+                Démarrer
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

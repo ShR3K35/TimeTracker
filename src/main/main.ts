@@ -212,8 +212,18 @@ class TimeTrackerApp {
     this.shortcutService.on('shortcut-triggered', (event) => {
       console.log(`[TimeTrackerApp] Received shortcut-triggered event:`, event);
 
-      // Start timer when shortcut is triggered
-      this.timerService.startTimer(event.issueKey, event.issueTitle, event.issueType);
+      // Get default activity
+      const defaultActivity = this.db.getDefaultTempoActivity();
+
+      // Start timer when shortcut is triggered (with default activity)
+      this.timerService.startTimer(
+        event.issueKey,
+        event.issueTitle,
+        event.issueType,
+        defaultActivity?.tempo_id,
+        defaultActivity?.name,
+        defaultActivity?.value
+      );
 
       // Show notification
       new Notification({
@@ -521,8 +531,8 @@ class TimeTrackerApp {
     });
 
     // Timer
-    ipcMain.handle('timer:start', async (_, issueKey: string, issueTitle: string, issueType: string) => {
-      const sessionId = this.timerService.startTimer(issueKey, issueTitle, issueType);
+    ipcMain.handle('timer:start', async (_, issueKey: string, issueTitle: string, issueType: string, activityId?: number, activityName?: string, activityValue?: string) => {
+      const sessionId = this.timerService.startTimer(issueKey, issueTitle, issueType, activityId, activityName, activityValue);
       return { sessionId };
     });
 
@@ -572,6 +582,108 @@ class TimeTrackerApp {
       this.db.updateWorkSession(id, updates);
     });
 
+    ipcMain.handle('sessions:update-group-activity', async (_, date: string, issueKey: string, oldActivityId: number | null, newActivityId: number | null, newActivityName: string | null, newActivityValue: string | null) => {
+      // Get all sessions for this date, issue key, and old activity
+      const sessions = this.db.getWorkSessionsByDate(date);
+      const matchingSessions = sessions.filter(s =>
+        s.issue_key === issueKey &&
+        (s.activity_id === oldActivityId || (s.activity_id === null && oldActivityId === null))
+      );
+
+      // Update each session with the new activity
+      for (const session of matchingSessions) {
+        this.db.updateWorkSession(session.id, {
+          activity_id: newActivityId,
+          activity_name: newActivityName,
+          activity_value: newActivityValue,
+        });
+      }
+
+      return { success: true, updatedCount: matchingSessions.length };
+    });
+
+    // Create manual session
+    ipcMain.handle('sessions:create-manual', async (_, data: {
+      date: string;
+      issueKey: string;
+      issueTitle: string;
+      issueType: string;
+      durationSeconds: number;
+      activityId: number | null;
+      activityName: string | null;
+      activityValue: string | null;
+    }) => {
+      // Create a session with the specified date at 09:00
+      const startTime = `${data.date}T09:00:00.000Z`;
+      const endTime = new Date(new Date(startTime).getTime() + data.durationSeconds * 1000).toISOString();
+
+      const sessionId = this.db.createWorkSession({
+        issue_key: data.issueKey,
+        issue_title: data.issueTitle,
+        issue_type: data.issueType,
+        start_time: startTime,
+        end_time: endTime,
+        duration_seconds: data.durationSeconds,
+        comment: null,
+        status: 'draft',
+        tempo_worklog_id: null,
+        activity_id: data.activityId,
+        activity_name: data.activityName,
+        activity_value: data.activityValue,
+      });
+
+      // Update daily summary
+      const sessions = this.db.getWorkSessionsByDate(data.date);
+      const totalMinutes = sessions.reduce((sum, s) => sum + s.duration_seconds / 60, 0);
+
+      this.db.createOrUpdateDailySummary({
+        date: data.date,
+        total_minutes: totalMinutes,
+        adjusted_minutes: null,
+        status: 'pending',
+        sent_at: null,
+      });
+
+      console.log(`[Main] Created manual session for ${data.issueKey} on ${data.date}: ${data.durationSeconds}s`);
+      return { success: true, sessionId };
+    });
+
+    ipcMain.handle('sessions:delete-group', async (_, date: string, issueKey: string, activityId: number | null) => {
+      const sessions = this.db.getWorkSessionsByDate(date);
+      const sessionsToDelete = sessions.filter(s => {
+        if (s.issue_key !== issueKey) return false;
+        return s.activity_id === activityId;
+      });
+
+      if (sessionsToDelete.length === 0) {
+        throw new Error(`Aucune session trouvée pour ${issueKey} le ${date}`);
+      }
+
+      // Delete all sessions in the group
+      for (const session of sessionsToDelete) {
+        this.db.deleteWorkSession(session.id);
+      }
+
+      // Update daily summary
+      const remainingSessions = this.db.getWorkSessionsByDate(date);
+      if (remainingSessions.length === 0) {
+        // Delete the summary if no sessions remain
+        this.db.deleteDailySummary(date);
+      } else {
+        const totalMinutes = remainingSessions.reduce((sum, s) => sum + s.duration_seconds / 60, 0);
+        this.db.createOrUpdateDailySummary({
+          date,
+          total_minutes: totalMinutes,
+          adjusted_minutes: null,
+          status: 'pending',
+          sent_at: null,
+        });
+      }
+
+      console.log(`[Main] Deleted ${sessionsToDelete.length} session(s) for ${issueKey} on ${date}`);
+      return { success: true, deletedCount: sessionsToDelete.length };
+    });
+
     // Daily summaries
     ipcMain.handle('summaries:get-pending', async () => {
       return this.db.getPendingSummaries();
@@ -604,6 +716,16 @@ class TimeTrackerApp {
       return this.adjustmentService.getMaxDailyHours();
     });
 
+    ipcMain.handle('adjustments:reopen-day', async (_, date: string) => {
+      this.adjustmentService.reopenDay(date);
+      return { success: true };
+    });
+
+    ipcMain.handle('adjustments:update-task-duration', async (_, date: string, issueKey: string, durationSeconds: number, activityId?: number | null) => {
+      this.adjustmentService.updateTaskGroupDuration(date, issueKey, durationSeconds, activityId);
+      return { success: true };
+    });
+
     // Tempo sync
     ipcMain.handle('tempo:send-worklog', async (_, worklog: any) => {
       if (!this.tempoService) {
@@ -616,13 +738,20 @@ class TimeTrackerApp {
       if (!this.tempoService) {
         throw new Error('Tempo service not initialized');
       }
+      if (!this.jiraService) {
+        throw new Error('Jira service not initialized');
+      }
 
       const sessions = this.db.getWorkSessionsByDate(date);
       const results = [];
 
-      // Group sessions by issue_key
+      // Group sessions by issue_key AND activity_id
+      // (same task with different activities should be separate worklogs)
       const groupedSessions = new Map<string, {
         issueKey: string;
+        activityId: number | null;
+        activityName: string | null;
+        activityValue: string | null;
         totalSeconds: number;
         sessions: typeof sessions;
         comments: string[];
@@ -633,7 +762,9 @@ class TimeTrackerApp {
           continue;
         }
 
-        const existing = groupedSessions.get(session.issue_key);
+        // Group key includes both issue_key and activity_id
+        const groupKey = `${session.issue_key}|${session.activity_id || 'none'}`;
+        const existing = groupedSessions.get(groupKey);
         if (existing) {
           existing.totalSeconds += session.duration_seconds;
           existing.sessions.push(session);
@@ -641,8 +772,11 @@ class TimeTrackerApp {
             existing.comments.push(session.comment);
           }
         } else {
-          groupedSessions.set(session.issue_key, {
+          groupedSessions.set(groupKey, {
             issueKey: session.issue_key,
+            activityId: session.activity_id,
+            activityName: session.activity_name,
+            activityValue: session.activity_value,
             totalSeconds: session.duration_seconds,
             sessions: [session],
             comments: session.comment ? [session.comment] : [],
@@ -650,16 +784,57 @@ class TimeTrackerApp {
         }
       }
 
-      // Send one worklog per task group
-      for (const [issueKey, group] of groupedSessions) {
+      // Send one worklog per task+activity group
+      for (const [, group] of groupedSessions) {
         try {
-          console.log(`[Tempo] Sending worklog for ${issueKey}: ${group.totalSeconds}s`);
-          const worklog = await this.tempoService.createWorklog({
-            issueKey: group.issueKey,
+          console.log(`[Tempo] Fetching issue ID for ${group.issueKey}`);
+          // Get the issue ID from Jira (Tempo requires numeric issue ID, not key)
+          const jiraIssue = await this.jiraService.getIssue(group.issueKey);
+          const issueId = parseInt(jiraIssue.id, 10);
+
+          // Filter out crash recovery messages from comments
+          const cleanComments = group.comments
+            .filter(c => c && !c.includes('[À vérifier - récupéré après crash]'))
+            .map(c => c.trim())
+            .filter(c => c.length > 0);
+
+          // Build worklog payload for Tempo API v4
+          const worklogPayload: any = {
+            issueId: issueId,
             timeSpentSeconds: group.totalSeconds,
-            startDate: date,
-            description: group.comments.join(' | '),
-          });
+            startDate: date, // Format: yyyy-MM-dd
+            startTime: '09:00:00',
+          };
+
+          // Only add description if there are meaningful comments
+          if (cleanComments.length > 0) {
+            worklogPayload.description = cleanComments.join(' | ');
+          }
+
+          // Add activity attribute if configured (Tempo v4 format)
+          // Use the activity VALUE (technical value without accents) for the API
+          if (group.activityId) {
+            // Try to get the value from the session, or look it up from TempoActivity table
+            let activityValue = group.activityValue;
+            if (!activityValue) {
+              // Fallback: look up the activity value from the TempoActivity table
+              const activities = this.db.getTempoActivities();
+              const activity = activities.find(a => a.tempo_id === group.activityId);
+              activityValue = activity?.value || null;
+            }
+
+            if (activityValue) {
+              worklogPayload.attributes = [
+                {
+                  key: '_Activité_',
+                  value: activityValue,
+                },
+              ];
+            }
+          }
+
+          console.log(`[Tempo] Sending worklog for ${group.issueKey} (ID: ${issueId}): ${group.totalSeconds}s, activity: ${group.activityName || 'none'}`);
+          const worklog = await this.tempoService.createWorklog(worklogPayload);
 
           // Mark all sessions in this group as sent
           for (const session of group.sessions) {
@@ -671,16 +846,18 @@ class TimeTrackerApp {
 
           results.push({
             success: true,
-            session: issueKey,
+            session: group.issueKey,
+            activity: group.activityName,
             totalSeconds: group.totalSeconds,
             sessionsCount: group.sessions.length,
           });
-          console.log(`[Tempo] Successfully sent worklog for ${issueKey}`);
+          console.log(`[Tempo] Successfully sent worklog for ${group.issueKey}`);
         } catch (error: any) {
-          console.error(`[Tempo] Failed to send worklog for ${issueKey}:`, error.message);
+          console.error(`[Tempo] Failed to send worklog for ${group.issueKey}:`, error.message);
           results.push({
             success: false,
-            session: issueKey,
+            session: group.issueKey,
+            activity: group.activityName,
             error: error.message || 'Erreur inconnue',
             totalSeconds: group.totalSeconds,
             sessionsCount: group.sessions.length,
@@ -787,6 +964,30 @@ class TimeTrackerApp {
     // Reminder window actions
     ipcMain.handle('reminder:action', async (_, action: 'continue' | 'change') => {
       this.handleReminderAction(action);
+    });
+
+    // Tempo Activities
+    ipcMain.handle('activities:get', async () => {
+      return this.db.getTempoActivities();
+    });
+
+    ipcMain.handle('activities:get-default', async () => {
+      return this.db.getDefaultTempoActivity();
+    });
+
+    ipcMain.handle('activities:add', async (_, activity: { tempo_id: number; name: string; value: string; position: number }) => {
+      this.db.addTempoActivity(activity);
+      return { success: true };
+    });
+
+    ipcMain.handle('activities:remove', async (_, tempoId: number) => {
+      this.db.removeTempoActivity(tempoId);
+      return { success: true };
+    });
+
+    ipcMain.handle('activities:reorder', async (_, activities: { tempo_id: number; position: number }[]) => {
+      this.db.reorderTempoActivities(activities);
+      return { success: true };
     });
   }
 }

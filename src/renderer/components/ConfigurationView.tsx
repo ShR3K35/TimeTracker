@@ -5,6 +5,14 @@ interface ConfigurationViewProps {
   onConfigured: () => void;
 }
 
+interface TempoActivity {
+  id: number;
+  tempo_id: number;
+  name: string;
+  value: string;
+  position: number;
+}
+
 function ConfigurationView({ onConfigured }: ConfigurationViewProps) {
   const [jiraBaseUrl, setJiraBaseUrl] = useState('');
   const [jiraEmail, setJiraEmail] = useState('');
@@ -19,9 +27,62 @@ function ConfigurationView({ onConfigured }: ConfigurationViewProps) {
   const [loading, setLoading] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
 
+  // Tempo Activities
+  const [activities, setActivities] = useState<TempoActivity[]>([]);
+  const [newActivityId, setNewActivityId] = useState('');
+  const [newActivityName, setNewActivityName] = useState('');
+  const [newActivityValue, setNewActivityValue] = useState('');
+
   useEffect(() => {
     loadConfiguration();
+    loadActivities();
   }, []);
+
+  const loadActivities = async () => {
+    const acts = await window.electronAPI.activities.get();
+    setActivities(acts);
+  };
+
+  const addActivity = async () => {
+    const id = parseInt(newActivityId);
+    if (!id || !newActivityName.trim() || !newActivityValue.trim()) return;
+
+    await window.electronAPI.activities.add({
+      tempo_id: id,
+      name: newActivityName.trim(),
+      value: newActivityValue.trim(),
+      position: activities.length,
+    });
+
+    setNewActivityId('');
+    setNewActivityName('');
+    setNewActivityValue('');
+    await loadActivities();
+  };
+
+  const removeActivity = async (tempoId: number) => {
+    await window.electronAPI.activities.remove(tempoId);
+    await loadActivities();
+  };
+
+  const moveActivity = async (index: number, direction: 'up' | 'down') => {
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= activities.length) return;
+
+    const newActivities = [...activities];
+    const temp = newActivities[index];
+    newActivities[index] = newActivities[newIndex];
+    newActivities[newIndex] = temp;
+
+    // Update positions
+    const reordered = newActivities.map((a, i) => ({
+      tempo_id: a.tempo_id,
+      position: i,
+    }));
+
+    await window.electronAPI.activities.reorder(reordered);
+    await loadActivities();
+  };
 
   const loadConfiguration = async () => {
     const jiraUrl = await window.electronAPI.config.get('jira_base_url');
@@ -196,6 +257,90 @@ function ConfigurationView({ onConfigured }: ConfigurationViewProps) {
               placeholder="Votre Account ID Tempo"
               required
             />
+          </div>
+        </div>
+
+        <div className="form-section">
+          <h3>Activités Tempo</h3>
+          <small className="section-description">
+            Configurez les activités disponibles lors de la saisie du temps. La première activité sera utilisée par défaut.
+          </small>
+
+          <div className="activities-list">
+            {activities.length === 0 ? (
+              <p className="no-activities">Aucune activité configurée</p>
+            ) : (
+              activities.map((activity, index) => (
+                <div key={activity.tempo_id} className="activity-item">
+                  <div className="activity-order-buttons">
+                    <button
+                      type="button"
+                      className="order-button"
+                      onClick={() => moveActivity(index, 'up')}
+                      disabled={index === 0}
+                      title="Monter"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      type="button"
+                      className="order-button"
+                      onClick={() => moveActivity(index, 'down')}
+                      disabled={index === activities.length - 1}
+                      title="Descendre"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                  <div className="activity-info">
+                    <span className="activity-name">{activity.name}</span>
+                    <span className="activity-value">({activity.value})</span>
+                    <span className="activity-id">ID: {activity.tempo_id}</span>
+                  </div>
+                  {index === 0 && <span className="default-badge">Par défaut</span>}
+                  <button
+                    type="button"
+                    className="remove-activity-button"
+                    onClick={() => removeActivity(activity.tempo_id)}
+                    title="Supprimer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="add-activity-form">
+            <input
+              type="number"
+              placeholder="ID"
+              value={newActivityId}
+              onChange={(e) => setNewActivityId(e.target.value)}
+              className="activity-id-input"
+            />
+            <input
+              type="text"
+              placeholder="Nom (affichage)"
+              value={newActivityName}
+              onChange={(e) => setNewActivityName(e.target.value)}
+              className="activity-name-input"
+            />
+            <input
+              type="text"
+              placeholder="Value (API Tempo)"
+              value={newActivityValue}
+              onChange={(e) => setNewActivityValue(e.target.value)}
+              className="activity-value-input"
+            />
+            <button
+              type="button"
+              onClick={addActivity}
+              disabled={!newActivityId || !newActivityName.trim() || !newActivityValue.trim()}
+              className="add-activity-button"
+            >
+              Ajouter
+            </button>
           </div>
         </div>
 

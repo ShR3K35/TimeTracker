@@ -11,24 +11,30 @@
 
 .search-input {
   flex: 1;
-  padding: 12px;
-  border: 2px solid #dfe1e6;
-  border-radius: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--additi-border);
+  border-radius: var(--radius-sm);
   font-size: 14px;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  color: var(--additi-dark);
 }
 
 .search-input:focus {
   outline: none;
-  border-color: #0052cc;
+  border-color: var(--additi-navy);
+  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.1);
+}
+
+.search-input::placeholder {
+  color: var(--additi-gray-light);
 }
 
 .search-button {
-  background-color: #0052cc;
-  color: white;
+  background-color: var(--additi-red);
+  color: var(--additi-white);
   border: none;
   padding: 12px 24px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -37,11 +43,12 @@
 }
 
 .search-button:hover {
-  background-color: #0065ff;
+  background-color: var(--additi-red-hover);
 }
 
 .search-button:disabled {
-  background-color: #cccccc;
+  background-color: var(--additi-border);
+  color: var(--additi-gray-light);
   cursor: not-allowed;
 }
 
@@ -50,12 +57,14 @@
 }
 
 .issue-section h3 {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
-  color: #172b4d;
+  color: var(--additi-navy);
   margin-bottom: 12px;
   padding-bottom: 8px;
-  border-bottom: 2px solid #dfe1e6;
+  border-bottom: 2px solid var(--additi-border);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .issue-list {
@@ -65,9 +74,9 @@
 }
 
 .issue-item {
-  background: white;
-  border: 2px solid #dfe1e6;
-  border-radius: 6px;
+  background: var(--additi-white);
+  border: 1px solid var(--additi-border);
+  border-radius: var(--radius-md);
   padding: 12px;
   display: flex;
   align-items: center;
@@ -77,8 +86,8 @@
 }
 
 .issue-item:hover {
-  border-color: #0052cc;
-  box-shadow: 0 2px 8px rgba(0, 82, 204, 0.1);
+  border-color: var(--additi-navy);
+  box-shadow: var(--shadow-sm);
   transform: translateY(-1px);
 }
 
@@ -94,13 +103,13 @@
 .issue-key {
   font-size: 13px;
   font-weight: 700;
-  color: #0052cc;
+  color: var(--additi-red);
   margin-bottom: 4px;
 }
 
 .issue-summary {
   font-size: 14px;
-  color: #172b4d;
+  color: var(--additi-dark);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -113,8 +122,8 @@
 }
 
 .issue-type-badge {
-  background-color: #f4f5f7;
-  color: #5e6c84;
+  background-color: var(--additi-bg);
+  color: var(--additi-gray);
   padding: 4px 8px;
   border-radius: 3px;
   font-size: 11px;
@@ -129,7 +138,7 @@
   font-size: 20px;
   cursor: pointer;
   padding: 4px 8px;
-  color: #ffd700;
+  color: var(--additi-red);
   transition: transform 0.2s, opacity 0.2s;
   opacity: 0.7;
 }
@@ -142,9 +151,144 @@
 .no-results {
   text-align: center;
   padding: 40px 20px;
-  color: #6b778c;
+  color: var(--additi-gray);
 }
 
 .no-results p {
   font-size: 14px;
+}
+
+/* Activity Selection Modal */
+.activity-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.activity-modal {
+  background: var(--additi-white);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: var(--shadow-lg);
+}
+
+.activity-modal h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--additi-navy);
+  margin: 0 0 16px 0;
+}
+
+.selected-task-info {
+  background: var(--additi-bg);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin-bottom: 20px;
+  border-left: 3px solid var(--additi-red);
+}
+
+.selected-task-key {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--additi-red);
+  margin-bottom: 4px;
+}
+
+.selected-task-title {
+  display: block;
+  font-size: 14px;
+  color: var(--additi-dark);
+}
+
+.activity-selection {
+  margin-bottom: 24px;
+}
+
+.activity-selection label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--additi-gray);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.activity-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.activity-button {
+  background: var(--additi-bg);
+  border: 2px solid var(--additi-border);
+  border-radius: var(--radius-md);
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--additi-dark);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.activity-button:hover {
+  border-color: var(--additi-navy);
+  background: var(--additi-white);
+}
+
+.activity-button.selected {
+  border-color: var(--additi-red);
+  background: var(--additi-red);
+  color: var(--additi-white);
+}
+
+.activity-modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.activity-modal-actions .cancel-button {
+  background: var(--additi-bg);
+  border: 1px solid var(--additi-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--additi-gray);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.activity-modal-actions .cancel-button:hover {
+  background: var(--additi-border);
+}
+
+.activity-modal-actions .start-button {
+  background: var(--additi-red);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--additi-white);
+  cursor: pointer;
+  transition: background-color 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.activity-modal-actions .start-button:hover {
+  background: var(--additi-red-hover);
 }

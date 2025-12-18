@@ -36,7 +36,7 @@ export class TimerService extends EventEmitter {
     }
   }
 
-  startTimer(issueKey: string, issueTitle: string, issueType: string): number {
+  startTimer(issueKey: string, issueTitle: string, issueType: string, activityId?: number, activityName?: string, activityValue?: string): number {
     // Stop current timer if running
     if (this.isRunning) {
       this.stopTimer();
@@ -57,6 +57,9 @@ export class TimerService extends EventEmitter {
       comment: null,
       status: 'draft',
       tempo_worklog_id: null,
+      activity_id: activityId || null,
+      activity_name: activityName || null,
+      activity_value: activityValue || null,
     });
 
     // Update recent issues

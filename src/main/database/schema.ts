@@ -20,6 +20,9 @@ export interface WorkSession {
   comment: string | null;
   status: 'draft' | 'adjusted' | 'sent';
   tempo_worklog_id: string | null;
+  activity_id: number | null;
+  activity_name: string | null;
+  activity_value: string | null; // Technical value for Tempo API
   created_at: string;
   updated_at: string;
 }
@@ -60,6 +63,15 @@ export interface KeyboardShortcut {
   enabled: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface TempoActivity {
+  id: number;
+  tempo_id: number;
+  name: string;
+  value: string; // Technical value to send to Tempo API (without accents)
+  position: number;
+  created_at: string;
 }
 
 export class DatabaseManager {
@@ -138,6 +150,15 @@ export class DatabaseManager {
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS TempoActivity (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tempo_id INTEGER NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tempoactivity_position ON TempoActivity(position);
       CREATE INDEX IF NOT EXISTS idx_worksession_date ON WorkSession(date(start_time));
       CREATE INDEX IF NOT EXISTS idx_worksession_status ON WorkSession(status);
       CREATE INDEX IF NOT EXISTS idx_dailysummary_date ON DailySummary(date);
@@ -148,6 +169,35 @@ export class DatabaseManager {
 
     // Insert default configuration
     this.initializeDefaultConfig();
+
+    // Run migrations
+    this.runMigrations();
+  }
+
+  private runMigrations() {
+    // Migration: Add activity columns to WorkSession if they don't exist
+    const wsColumns = this.db.pragma('table_info(WorkSession)') as { name: string }[];
+    const wsColumnNames = wsColumns.map(c => c.name);
+
+    if (!wsColumnNames.includes('activity_id')) {
+      this.db.exec('ALTER TABLE WorkSession ADD COLUMN activity_id INTEGER');
+    }
+    if (!wsColumnNames.includes('activity_name')) {
+      this.db.exec('ALTER TABLE WorkSession ADD COLUMN activity_name TEXT');
+    }
+    if (!wsColumnNames.includes('activity_value')) {
+      this.db.exec('ALTER TABLE WorkSession ADD COLUMN activity_value TEXT');
+    }
+
+    // Migration: Add value column to TempoActivity if it doesn't exist
+    const taColumns = this.db.pragma('table_info(TempoActivity)') as { name: string }[];
+    const taColumnNames = taColumns.map(c => c.name);
+
+    if (!taColumnNames.includes('value')) {
+      this.db.exec('ALTER TABLE TempoActivity ADD COLUMN value TEXT');
+      // Set default value same as name for existing activities
+      this.db.exec('UPDATE TempoActivity SET value = name WHERE value IS NULL');
+    }
   }
 
   private initializeDefaultConfig() {
@@ -192,8 +242,8 @@ export class DatabaseManager {
     const result = this.db
       .prepare(
         `INSERT INTO WorkSession (issue_key, issue_title, issue_type, start_time, end_time,
-         duration_seconds, comment, status, tempo_worklog_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         duration_seconds, comment, status, tempo_worklog_id, activity_id, activity_name, activity_value)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         session.issue_key,
@@ -204,7 +254,10 @@ export class DatabaseManager {
         session.duration_seconds,
         session.comment,
         session.status,
-        session.tempo_worklog_id
+        session.tempo_worklog_id,
+        session.activity_id,
+        session.activity_name,
+        session.activity_value
       );
     return result.lastInsertRowid as number;
   }
@@ -222,6 +275,14 @@ export class DatabaseManager {
     this.db
       .prepare(`UPDATE WorkSession SET ${fields}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
       .run(...values, id);
+  }
+
+  deleteWorkSession(id: number): void {
+    this.db.prepare('DELETE FROM WorkSession WHERE id = ?').run(id);
+  }
+
+  deleteDailySummary(date: string): void {
+    this.db.prepare('DELETE FROM DailySummary WHERE date = ?').run(date);
   }
 
   getActiveWorkSession(): WorkSession | null {
@@ -422,6 +483,54 @@ export class DatabaseManager {
         .prepare(`UPDATE KeyboardShortcut SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE accelerator = ?`)
         .run(...values, accelerator);
     }
+  }
+
+  // TempoActivity methods
+  addTempoActivity(activity: Omit<TempoActivity, 'id' | 'created_at'>): void {
+    this.db
+      .prepare(
+        `INSERT INTO TempoActivity (tempo_id, name, value, position)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(tempo_id) DO UPDATE SET
+         name = excluded.name,
+         value = excluded.value,
+         position = excluded.position`
+      )
+      .run(activity.tempo_id, activity.name, activity.value, activity.position);
+  }
+
+  removeTempoActivity(tempoId: number): void {
+    this.db
+      .prepare('DELETE FROM TempoActivity WHERE tempo_id = ?')
+      .run(tempoId);
+  }
+
+  getTempoActivities(): TempoActivity[] {
+    return this.db
+      .prepare('SELECT * FROM TempoActivity ORDER BY position')
+      .all() as TempoActivity[];
+  }
+
+  getDefaultTempoActivity(): TempoActivity | null {
+    return this.db
+      .prepare('SELECT * FROM TempoActivity ORDER BY position LIMIT 1')
+      .get() as TempoActivity | null;
+  }
+
+  updateTempoActivityPosition(tempoId: number, position: number): void {
+    this.db
+      .prepare('UPDATE TempoActivity SET position = ? WHERE tempo_id = ?')
+      .run(position, tempoId);
+  }
+
+  reorderTempoActivities(activities: { tempo_id: number; position: number }[]): void {
+    const stmt = this.db.prepare('UPDATE TempoActivity SET position = ? WHERE tempo_id = ?');
+    const transaction = this.db.transaction((items: { tempo_id: number; position: number }[]) => {
+      for (const item of items) {
+        stmt.run(item.position, item.tempo_id);
+      }
+    });
+    transaction(activities);
   }
 
   close(): void {
