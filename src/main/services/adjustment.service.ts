@@ -6,11 +6,22 @@ export interface AdjustedSession {
   wasAdjusted: boolean;
 }
 
+export interface TaskGroup {
+  issueKey: string;
+  issueTitle: string;
+  issueType: string;
+  sessions: WorkSession[];
+  originalTotalSeconds: number;
+  adjustedTotalSeconds: number;
+  wasAdjusted: boolean;
+}
+
 export interface DailyAdjustment {
   date: string;
   originalTotalMinutes: number;
   adjustedTotalMinutes: number;
   sessions: AdjustedSession[];
+  taskGroups: TaskGroup[];
   needsAdjustment: boolean;
 }
 
@@ -23,6 +34,43 @@ export class AdjustmentService {
     this.maxDailyMinutes = maxDailyHours * 60;
   }
 
+  setMaxDailyHours(hours: number): void {
+    this.maxDailyMinutes = hours * 60;
+    console.log(`[AdjustmentService] Max daily hours updated to ${hours} hours (${this.maxDailyMinutes} minutes)`);
+  }
+
+  getMaxDailyHours(): number {
+    return this.maxDailyMinutes / 60;
+  }
+
+  /**
+   * Group sessions by issue key
+   */
+  private groupSessionsByTask(sessions: WorkSession[]): TaskGroup[] {
+    const groupMap = new Map<string, TaskGroup>();
+
+    for (const session of sessions) {
+      const existing = groupMap.get(session.issue_key);
+      if (existing) {
+        existing.sessions.push(session);
+        existing.originalTotalSeconds += session.duration_seconds;
+        existing.adjustedTotalSeconds += session.duration_seconds;
+      } else {
+        groupMap.set(session.issue_key, {
+          issueKey: session.issue_key,
+          issueTitle: session.issue_title,
+          issueType: session.issue_type,
+          sessions: [session],
+          originalTotalSeconds: session.duration_seconds,
+          adjustedTotalSeconds: session.duration_seconds,
+          wasAdjusted: false,
+        });
+      }
+    }
+
+    return Array.from(groupMap.values());
+  }
+
   /**
    * Analyze pending days and calculate adjustments if needed
    */
@@ -33,9 +81,10 @@ export class AdjustmentService {
     for (const summary of pendingSummaries) {
       const sessions = this.db.getWorkSessionsByDate(summary.date);
       const totalMinutes = this.calculateTotalMinutes(sessions);
+      const taskGroups = this.groupSessionsByTask(sessions);
 
       if (totalMinutes > this.maxDailyMinutes) {
-        const adjusted = this.adjustDaySessions(summary.date, sessions, totalMinutes);
+        const adjusted = this.adjustDaySessions(summary.date, sessions, totalMinutes, taskGroups);
         adjustments.push(adjusted);
       } else {
         adjustments.push({
@@ -47,6 +96,7 @@ export class AdjustmentService {
             adjusted: s,
             wasAdjusted: false,
           })),
+          taskGroups,
           needsAdjustment: false,
         });
       }
@@ -56,10 +106,52 @@ export class AdjustmentService {
   }
 
   /**
-   * Adjust sessions for a specific day to fit within max daily time
+   * Analyze a specific day and calculate adjustment to reach max daily time
    */
-  adjustDaySessions(date: string, sessions: WorkSession[], totalMinutes: number): DailyAdjustment {
-    if (totalMinutes <= this.maxDailyMinutes) {
+  analyzeDay(date: string): DailyAdjustment {
+    const sessions = this.db.getWorkSessionsByDate(date);
+    const totalMinutes = this.calculateTotalMinutes(sessions);
+    const taskGroups = this.groupSessionsByTask(sessions);
+
+    return this.adjustDaySessions(date, sessions, totalMinutes, taskGroups);
+  }
+
+  /**
+   * Apply adjustment for a single day
+   */
+  applyDayAdjustment(adjustment: DailyAdjustment): void {
+    if (!adjustment.needsAdjustment) {
+      return;
+    }
+
+    // Update work sessions
+    for (const sessionAdj of adjustment.sessions) {
+      if (sessionAdj.wasAdjusted) {
+        this.db.updateWorkSession(sessionAdj.original.id, {
+          duration_seconds: sessionAdj.adjusted.duration_seconds,
+          status: 'adjusted',
+        });
+      }
+    }
+
+    // Update daily summary
+    this.db.createOrUpdateDailySummary({
+      date: adjustment.date,
+      total_minutes: adjustment.originalTotalMinutes,
+      adjusted_minutes: adjustment.adjustedTotalMinutes,
+      status: 'ready',
+      sent_at: null,
+    });
+  }
+
+  /**
+   * Adjust sessions for a specific day to reach exactly max daily time
+   * Adjustments are applied at the task group level
+   * Can both increase or decrease durations to match the target
+   */
+  adjustDaySessions(date: string, sessions: WorkSession[], totalMinutes: number, taskGroups: TaskGroup[]): DailyAdjustment {
+    // If already at target, no adjustment needed
+    if (Math.abs(totalMinutes - this.maxDailyMinutes) < 1) {
       return {
         date,
         originalTotalMinutes: totalMinutes,
@@ -69,29 +161,25 @@ export class AdjustmentService {
           adjusted: s,
           wasAdjusted: false,
         })),
+        taskGroups,
         needsAdjustment: false,
       };
     }
 
     const coefficient = this.maxDailyMinutes / totalMinutes;
-    const adjustedSessions: AdjustedSession[] = [];
+    const adjustedGroups: TaskGroup[] = [];
     let adjustedTotal = 0;
 
-    // First pass: apply coefficient and round to nearest 15 minutes
-    for (const session of sessions) {
-      const originalMinutes = session.duration_seconds / 60;
+    // First pass: apply coefficient to task groups and round to nearest 15 minutes
+    for (const group of taskGroups) {
+      const originalMinutes = group.originalTotalSeconds / 60;
       const adjustedMinutes = this.roundToQuarterHour(originalMinutes * coefficient);
 
       adjustedTotal += adjustedMinutes;
 
-      const adjustedSession: WorkSession = {
-        ...session,
-        duration_seconds: adjustedMinutes * 60,
-      };
-
-      adjustedSessions.push({
-        original: session,
-        adjusted: adjustedSession,
+      adjustedGroups.push({
+        ...group,
+        adjustedTotalSeconds: adjustedMinutes * 60,
         wasAdjusted: adjustedMinutes !== originalMinutes,
       });
     }
@@ -99,7 +187,28 @@ export class AdjustmentService {
     // Second pass: adjust if total doesn't equal max daily minutes exactly
     const difference = this.maxDailyMinutes - adjustedTotal;
     if (difference !== 0) {
-      this.distributeRemainder(adjustedSessions, difference);
+      this.distributeRemainderToGroups(adjustedGroups, difference);
+    }
+
+    // Create adjusted sessions based on group adjustments
+    // Distribute the group's adjusted time proportionally among its sessions
+    const adjustedSessions: AdjustedSession[] = [];
+    for (const group of adjustedGroups) {
+      const groupCoefficient = group.adjustedTotalSeconds / group.originalTotalSeconds;
+
+      for (const session of group.sessions) {
+        const adjustedDuration = Math.round(session.duration_seconds * groupCoefficient);
+        const adjustedSession: WorkSession = {
+          ...session,
+          duration_seconds: adjustedDuration,
+        };
+
+        adjustedSessions.push({
+          original: session,
+          adjusted: adjustedSession,
+          wasAdjusted: adjustedDuration !== session.duration_seconds,
+        });
+      }
     }
 
     return {
@@ -107,6 +216,7 @@ export class AdjustmentService {
       originalTotalMinutes: totalMinutes,
       adjustedTotalMinutes: this.maxDailyMinutes,
       sessions: adjustedSessions,
+      taskGroups: adjustedGroups,
       needsAdjustment: true,
     };
   }
@@ -158,35 +268,35 @@ export class AdjustmentService {
   }
 
   /**
-   * Distribute remainder minutes to sessions
+   * Distribute remainder minutes to task groups
    */
-  private distributeRemainder(sessions: AdjustedSession[], remainderMinutes: number): void {
-    if (remainderMinutes === 0 || sessions.length === 0) {
+  private distributeRemainderToGroups(groups: TaskGroup[], remainderMinutes: number): void {
+    if (remainderMinutes === 0 || groups.length === 0) {
       return;
     }
 
-    // Sort sessions by duration (largest first)
-    const sortedSessions = [...sessions].sort((a, b) => {
-      return b.adjusted.duration_seconds - a.adjusted.duration_seconds;
+    // Sort groups by duration (largest first)
+    const sortedGroups = [...groups].sort((a, b) => {
+      return b.adjustedTotalSeconds - a.adjustedTotalSeconds;
     });
 
     // Distribute in 15-minute increments
     let remaining = remainderMinutes;
     let index = 0;
 
-    while (remaining !== 0 && index < sortedSessions.length) {
-      const session = sortedSessions[index];
+    while (remaining !== 0 && index < sortedGroups.length) {
+      const group = sortedGroups[index];
       const increment = remaining > 0 ? 15 : -15;
 
       // Only adjust if it won't make the duration negative
-      if (remaining < 0 && session.adjusted.duration_seconds < 15 * 60) {
+      if (remaining < 0 && group.adjustedTotalSeconds < 15 * 60) {
         index++;
         continue;
       }
 
-      session.adjusted.duration_seconds += increment * 60;
+      group.adjustedTotalSeconds += increment * 60;
       remaining -= increment;
-      session.wasAdjusted = true;
+      group.wasAdjusted = true;
 
       if (Math.abs(remaining) < 15) {
         break;
@@ -194,8 +304,8 @@ export class AdjustmentService {
 
       index++;
 
-      // Reset to beginning if we've gone through all sessions
-      if (index >= sortedSessions.length) {
+      // Reset to beginning if we've gone through all groups
+      if (index >= sortedGroups.length) {
         index = 0;
       }
     }

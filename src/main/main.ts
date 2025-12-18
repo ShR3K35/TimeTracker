@@ -9,6 +9,7 @@ import { ShortcutService } from './services/shortcut.service';
 
 class TimeTrackerApp {
   private mainWindow: BrowserWindow | null = null;
+  private reminderWindow: BrowserWindow | null = null;
   private tray: Tray | null = null;
   private db: DatabaseManager;
   private jiraService: JiraService | null = null;
@@ -17,6 +18,7 @@ class TimeTrackerApp {
   private adjustmentService: AdjustmentService;
   private shortcutService: ShortcutService;
   private notificationTimeout: NodeJS.Timeout | null = null;
+  private countdownInterval: NodeJS.Timeout | null = null;
   private isQuitting: boolean = false;
 
   constructor() {
@@ -33,6 +35,27 @@ class TimeTrackerApp {
     this.setupTimerListeners();
     this.setupShortcutListeners();
     this.setupIpcHandlers();
+    this.initializeServicesFromConfig();
+  }
+
+  private initializeServicesFromConfig() {
+    // Load saved configuration and initialize services
+    const jiraBaseUrl = this.db.getConfig('jira_base_url');
+    const jiraEmail = this.db.getConfig('jira_email');
+    const jiraToken = this.db.getConfig('jira_token');
+    const tempoApiUrl = this.db.getConfig('tempo_api_url');
+    const tempoToken = this.db.getConfig('tempo_token');
+    const tempoAccountId = this.db.getConfig('tempo_account_id');
+
+    if (jiraBaseUrl && jiraEmail && jiraToken) {
+      this.jiraService = new JiraService(jiraBaseUrl, jiraEmail, jiraToken);
+      console.log('[TimeTrackerApp] Jira service initialized from saved config');
+    }
+
+    if (tempoApiUrl && tempoToken && tempoAccountId) {
+      this.tempoService = new TempoService(tempoApiUrl, tempoToken, tempoAccountId);
+      console.log('[TimeTrackerApp] Tempo service initialized from saved config');
+    }
   }
 
   async init() {
@@ -61,9 +84,11 @@ class TimeTrackerApp {
 
   private createWindow() {
     this.mainWindow = new BrowserWindow({
-      width: 600,
-      height: 500,
-      resizable: false,
+      width: 1200,
+      height: 800,
+      minWidth: 800,
+      minHeight: 600,
+      resizable: true,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -92,8 +117,36 @@ class TimeTrackerApp {
   }
 
   private createTray() {
+    const { nativeImage } = require('electron');
     const iconPath = path.join(__dirname, '../../assets/icon.png');
-    this.tray = new Tray(iconPath);
+
+    let trayIcon;
+    try {
+      trayIcon = nativeImage.createFromPath(iconPath);
+      // Resize for tray (16x16 on Windows)
+      if (!trayIcon.isEmpty()) {
+        trayIcon = trayIcon.resize({ width: 16, height: 16 });
+      }
+    } catch (error) {
+      console.error('[TimeTrackerApp] Failed to load icon from:', iconPath, error);
+    }
+
+    // If icon failed to load, create a simple colored icon
+    if (!trayIcon || trayIcon.isEmpty()) {
+      console.log('[TimeTrackerApp] Creating fallback icon');
+      // Create a simple 16x16 blue square icon
+      const size = 16;
+      const buffer = Buffer.alloc(size * size * 4);
+      for (let i = 0; i < size * size; i++) {
+        buffer[i * 4] = 0x00;     // R
+        buffer[i * 4 + 1] = 0x82; // G
+        buffer[i * 4 + 2] = 0xCC; // B
+        buffer[i * 4 + 3] = 255;  // A
+      }
+      trayIcon = nativeImage.createFromBuffer(buffer, { width: size, height: size });
+    }
+
+    this.tray = new Tray(trayIcon);
 
     const contextMenu = Menu.buildFromTemplate([
       {
@@ -157,6 +210,8 @@ class TimeTrackerApp {
 
   private setupShortcutListeners() {
     this.shortcutService.on('shortcut-triggered', (event) => {
+      console.log(`[TimeTrackerApp] Received shortcut-triggered event:`, event);
+
       // Start timer when shortcut is triggered
       this.timerService.startTimer(event.issueKey, event.issueTitle, event.issueType);
 
@@ -196,34 +251,211 @@ class TimeTrackerApp {
       return;
     }
 
-    const notification = new Notification({
-      title: '🕐 TGD Time Tracker',
-      body: `Travaillez-vous toujours sur :\n${state.currentSession.issue_key} - ${state.currentSession.issue_title}?\n\nTemps écoulé : ${this.timerService.formatTime(state.elapsedSeconds)}\n\nCliquez sur cette notification pour continuer, ou ne faites rien pour arrêter automatiquement dans 60 secondes.`,
+    // Close existing reminder window if any
+    if (this.reminderWindow && !this.reminderWindow.isDestroyed()) {
+      this.reminderWindow.close();
+    }
+
+    const timeoutSeconds = parseInt(this.db.getConfig('notification_timeout') || '60');
+    let remainingSeconds = timeoutSeconds;
+
+    // Create a small modal window with buttons
+    this.reminderWindow = new BrowserWindow({
+      width: 480,
+      height: 320,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      alwaysOnTop: true,
+      frame: false,
+      transparent: false,
+      skipTaskbar: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.js'),
+      },
     });
+
+    // Center on screen
+    this.reminderWindow.center();
+
+    // Create HTML content for the reminder
+    const issueKey = state.currentSession.issue_key;
+    const issueTitle = state.currentSession.issue_title;
+    const elapsedTime = this.timerService.formatTime(state.elapsedSeconds);
+
+    const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          background: #f5f5f5;
+          color: #333;
+          height: 100vh;
+          display: flex;
+          flex-direction: column;
+          padding: 24px;
+          user-select: none;
+          border: 1px solid #ddd;
+        }
+        .header {
+          font-size: 18px;
+          font-weight: 600;
+          margin-bottom: 18px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #444;
+        }
+        .task-info {
+          background: #fff;
+          border: 1px solid #e0e0e0;
+          border-radius: 8px;
+          padding: 14px;
+          margin-bottom: 18px;
+        }
+        .issue-key {
+          font-weight: 700;
+          font-size: 16px;
+          color: #0052cc;
+        }
+        .issue-title {
+          font-size: 14px;
+          color: #555;
+          margin-top: 6px;
+          line-height: 1.4;
+        }
+        .elapsed {
+          font-size: 13px;
+          color: #777;
+          margin-top: 10px;
+        }
+        .countdown {
+          text-align: center;
+          font-size: 24px;
+          font-weight: 700;
+          margin: 16px 0;
+          color: #333;
+        }
+        .countdown-label {
+          font-size: 12px;
+          color: #888;
+        }
+        .buttons {
+          display: flex;
+          gap: 12px;
+          margin-top: auto;
+        }
+        button {
+          flex: 1;
+          padding: 14px;
+          border: none;
+          border-radius: 8px;
+          font-size: 15px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: transform 0.1s, opacity 0.2s;
+        }
+        button:hover { opacity: 0.85; }
+        button:active { transform: scale(0.98); }
+        .btn-continue {
+          background: #36b37e;
+          color: white;
+        }
+        .btn-change {
+          background: #de350b;
+          color: white;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">Rappel</div>
+      <div class="task-info">
+        <div class="issue-key">${issueKey}</div>
+        <div class="issue-title">${issueTitle}</div>
+        <div class="elapsed">Temps écoulé : ${elapsedTime}</div>
+      </div>
+      <div class="countdown">
+        <span id="timer">${remainingSeconds}</span>s
+        <div class="countdown-label">avant arrêt automatique</div>
+      </div>
+      <div class="buttons">
+        <button class="btn-continue" onclick="window.electronAPI.reminderAction('continue')">
+          ✓ Continuer
+        </button>
+        <button class="btn-change" onclick="window.electronAPI.reminderAction('change')">
+          ✕ Changer de tâche
+        </button>
+      </div>
+      <script>
+        let remaining = ${remainingSeconds};
+        const timerEl = document.getElementById('timer');
+        setInterval(() => {
+          remaining--;
+          if (remaining >= 0) timerEl.textContent = remaining;
+        }, 1000);
+      </script>
+    </body>
+    </html>
+    `;
+
+    this.reminderWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 
     // Set timeout to auto-stop
-    const timeout = parseInt(this.db.getConfig('notification_timeout') || '60');
     this.notificationTimeout = setTimeout(() => {
-      this.timerService.stopTimer();
-      new Notification({
-        title: 'TGD Time Tracker',
-        body: 'Chronomètre arrêté automatiquement (pas de réponse)',
-      }).show();
-    }, timeout * 1000);
-
-    notification.on('click', () => {
-      // User clicked the notification, continue timer
-      if (this.notificationTimeout) {
-        clearTimeout(this.notificationTimeout);
-        this.notificationTimeout = null;
+      if (this.timerService.isTimerRunning()) {
+        this.closeReminderWindow();
+        this.timerService.stopTimer();
+        new Notification({
+          title: '⏹️ TGD Time Tracker',
+          body: `Chronomètre arrêté automatiquement\n${issueKey} - Pas de réponse après ${timeoutSeconds}s`,
+        }).show();
+        // Open window to select new task
+        this.mainWindow?.show();
+        this.mainWindow?.webContents.send('show-task-selector');
+        console.log('[TimeTrackerApp] Auto-stopped after timeout, opening task selector');
       }
-    });
+    }, timeoutSeconds * 1000);
 
-    notification.on('close', () => {
-      // Notification closed without interaction, let timeout handle it
+    // Handle window close (X button or Alt+F4)
+    this.reminderWindow.on('closed', () => {
+      this.reminderWindow = null;
     });
+  }
 
-    notification.show();
+  private closeReminderWindow() {
+    if (this.notificationTimeout) {
+      clearTimeout(this.notificationTimeout);
+      this.notificationTimeout = null;
+    }
+    if (this.reminderWindow && !this.reminderWindow.isDestroyed()) {
+      this.reminderWindow.close();
+      this.reminderWindow = null;
+    }
+  }
+
+  private handleReminderAction(action: 'continue' | 'change') {
+    const state = this.timerService.getState();
+    this.closeReminderWindow();
+
+    if (action === 'continue') {
+      console.log('[TimeTrackerApp] User clicked Continue, timer continues');
+      new Notification({
+        title: '✅ TGD Time Tracker',
+        body: `Continué sur ${state.currentSession?.issue_key}`,
+        silent: true,
+      }).show();
+    } else {
+      console.log('[TimeTrackerApp] User clicked Change, opening task selector');
+      this.timerService.stopTimer();
+      this.mainWindow?.show();
+      this.mainWindow?.webContents.send('show-task-selector');
+    }
   }
 
   private checkPendingAdjustments() {
@@ -243,6 +475,19 @@ class TimeTrackerApp {
 
     ipcMain.handle('config:set', async (_, key: string, value: string) => {
       this.db.setConfig(key, value);
+
+      // Update services dynamically when settings change
+      if (key === 'notification_interval') {
+        const minutes = parseInt(value);
+        if (!isNaN(minutes) && minutes > 0) {
+          this.timerService.setNotificationInterval(minutes);
+        }
+      } else if (key === 'max_daily_hours') {
+        const hours = parseFloat(value);
+        if (!isNaN(hours) && hours > 0) {
+          this.adjustmentService.setMaxDailyHours(hours);
+        }
+      }
     });
 
     ipcMain.handle('config:initialize-services', async (_, config: {
@@ -345,6 +590,20 @@ class TimeTrackerApp {
       this.adjustmentService.applyAdjustments(adjustments);
     });
 
+    ipcMain.handle('adjustments:analyze-day', async (_, date: string) => {
+      return this.adjustmentService.analyzeDay(date);
+    });
+
+    ipcMain.handle('adjustments:apply-day', async (_, date: string) => {
+      const adjustment = this.adjustmentService.analyzeDay(date);
+      this.adjustmentService.applyDayAdjustment(adjustment);
+      return adjustment;
+    });
+
+    ipcMain.handle('adjustments:get-max-hours', async () => {
+      return this.adjustmentService.getMaxDailyHours();
+    });
+
     // Tempo sync
     ipcMain.handle('tempo:send-worklog', async (_, worklog: any) => {
       if (!this.tempoService) {
@@ -361,38 +620,88 @@ class TimeTrackerApp {
       const sessions = this.db.getWorkSessionsByDate(date);
       const results = [];
 
+      // Group sessions by issue_key
+      const groupedSessions = new Map<string, {
+        issueKey: string;
+        totalSeconds: number;
+        sessions: typeof sessions;
+        comments: string[];
+      }>();
+
       for (const session of sessions) {
         if (session.status === 'sent') {
           continue;
         }
 
-        try {
-          const worklog = await this.tempoService.createWorklog({
+        const existing = groupedSessions.get(session.issue_key);
+        if (existing) {
+          existing.totalSeconds += session.duration_seconds;
+          existing.sessions.push(session);
+          if (session.comment) {
+            existing.comments.push(session.comment);
+          }
+        } else {
+          groupedSessions.set(session.issue_key, {
             issueKey: session.issue_key,
-            timeSpentSeconds: session.duration_seconds,
-            startDate: date,
-            description: session.comment || '',
+            totalSeconds: session.duration_seconds,
+            sessions: [session],
+            comments: session.comment ? [session.comment] : [],
           });
-
-          this.db.updateWorkSession(session.id, {
-            tempo_worklog_id: worklog.tempoWorklogId.toString(),
-            status: 'sent',
-          });
-
-          results.push({ success: true, session: session.issue_key });
-        } catch (error: any) {
-          results.push({ success: false, session: session.issue_key, error: error.message });
         }
       }
 
-      // Update daily summary
-      this.db.createOrUpdateDailySummary({
-        date,
-        total_minutes: sessions.reduce((sum, s) => sum + s.duration_seconds / 60, 0),
-        adjusted_minutes: null,
-        status: 'sent',
-        sent_at: new Date().toISOString(),
-      });
+      // Send one worklog per task group
+      for (const [issueKey, group] of groupedSessions) {
+        try {
+          console.log(`[Tempo] Sending worklog for ${issueKey}: ${group.totalSeconds}s`);
+          const worklog = await this.tempoService.createWorklog({
+            issueKey: group.issueKey,
+            timeSpentSeconds: group.totalSeconds,
+            startDate: date,
+            description: group.comments.join(' | '),
+          });
+
+          // Mark all sessions in this group as sent
+          for (const session of group.sessions) {
+            this.db.updateWorkSession(session.id, {
+              tempo_worklog_id: worklog.tempoWorklogId.toString(),
+              status: 'sent',
+            });
+          }
+
+          results.push({
+            success: true,
+            session: issueKey,
+            totalSeconds: group.totalSeconds,
+            sessionsCount: group.sessions.length,
+          });
+          console.log(`[Tempo] Successfully sent worklog for ${issueKey}`);
+        } catch (error: any) {
+          console.error(`[Tempo] Failed to send worklog for ${issueKey}:`, error.message);
+          results.push({
+            success: false,
+            session: issueKey,
+            error: error.message || 'Erreur inconnue',
+            totalSeconds: group.totalSeconds,
+            sessionsCount: group.sessions.length,
+          });
+        }
+      }
+
+      // Only update daily summary if all worklogs were sent successfully
+      const failures = results.filter(r => !r.success);
+      const successes = results.filter(r => r.success);
+
+      if (failures.length === 0 && successes.length > 0) {
+        const totalMinutes = sessions.reduce((sum, s) => sum + s.duration_seconds / 60, 0);
+        this.db.createOrUpdateDailySummary({
+          date,
+          total_minutes: totalMinutes,
+          adjusted_minutes: null,
+          status: 'sent',
+          sent_at: new Date().toISOString(),
+        });
+      }
 
       return results;
     });
@@ -473,6 +782,11 @@ class TimeTrackerApp {
         isValid: ShortcutService.isValidAccelerator(accelerator),
         isAvailable: this.shortcutService.isShortcutAvailable(accelerator),
       };
+    });
+
+    // Reminder window actions
+    ipcMain.handle('reminder:action', async (_, action: 'continue' | 'change') => {
+      this.handleReminderAction(action);
     });
   }
 }

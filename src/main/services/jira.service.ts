@@ -89,12 +89,10 @@ export class JiraService {
 
   async searchIssues(jql: string, maxResults: number = 50): Promise<JiraSearchResponse> {
     try {
-      const response = await this.client.get('/search', {
-        params: {
-          jql,
-          maxResults,
-          fields: 'summary,issuetype,status,parent',
-        },
+      const response = await this.client.post('/search/jql', {
+        jql,
+        maxResults,
+        fields: ['summary', 'issuetype', 'status', 'parent'],
       });
       return response.data;
     } catch (error) {

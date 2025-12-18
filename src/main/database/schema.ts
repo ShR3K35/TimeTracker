@@ -277,7 +277,7 @@ export class DatabaseManager {
 
   getPendingSummaries(): DailySummary[] {
     return this.db
-      .prepare('SELECT * FROM DailySummary WHERE status != "sent" ORDER BY date')
+      .prepare("SELECT * FROM DailySummary WHERE status != 'sent' ORDER BY date")
       .all() as DailySummary[];
   }
 

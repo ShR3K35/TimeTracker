@@ -25,9 +25,14 @@ export class ShortcutService extends EventEmitter {
     this.unregisterAll();
     const shortcuts = this.db.getEnabledKeyboardShortcuts();
 
+    console.log(`[ShortcutService] Initializing ${shortcuts.length} shortcuts`);
+
     for (const shortcut of shortcuts) {
-      this.registerShortcut(shortcut);
+      const success = this.registerShortcut(shortcut);
+      console.log(`[ShortcutService] Shortcut ${shortcut.accelerator} -> ${shortcut.issue_key}: ${success ? 'registered' : 'FAILED'}`);
     }
+
+    console.log(`[ShortcutService] Registered shortcuts: ${Array.from(this.registeredShortcuts).join(', ')}`);
   }
 
   /**
@@ -35,11 +40,14 @@ export class ShortcutService extends EventEmitter {
    */
   registerShortcut(shortcut: KeyboardShortcut): boolean {
     if (!shortcut.enabled) {
+      console.log(`[ShortcutService] Shortcut ${shortcut.accelerator} is disabled, skipping`);
       return false;
     }
 
     try {
+      console.log(`[ShortcutService] Attempting to register: ${shortcut.accelerator}`);
       const success = globalShortcut.register(shortcut.accelerator, () => {
+        console.log(`[ShortcutService] Shortcut triggered: ${shortcut.accelerator} -> ${shortcut.issue_key}`);
         this.emit('shortcut-triggered', {
           accelerator: shortcut.accelerator,
           issueKey: shortcut.issue_key,
@@ -50,13 +58,14 @@ export class ShortcutService extends EventEmitter {
 
       if (success) {
         this.registeredShortcuts.add(shortcut.accelerator);
+        console.log(`[ShortcutService] Successfully registered: ${shortcut.accelerator}`);
         return true;
       } else {
-        console.error(`Failed to register shortcut: ${shortcut.accelerator}`);
+        console.error(`[ShortcutService] Failed to register shortcut: ${shortcut.accelerator} - globalShortcut.register returned false`);
         return false;
       }
     } catch (error) {
-      console.error(`Error registering shortcut ${shortcut.accelerator}:`, error);
+      console.error(`[ShortcutService] Error registering shortcut ${shortcut.accelerator}:`, error);
       return false;
     }
   }

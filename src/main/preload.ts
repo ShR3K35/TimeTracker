@@ -52,6 +52,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   adjustments: {
     analyze: () => ipcRenderer.invoke('adjustments:analyze'),
     apply: (adjustments: any[]) => ipcRenderer.invoke('adjustments:apply', adjustments),
+    analyzeDay: (date: string) => ipcRenderer.invoke('adjustments:analyze-day', date),
+    applyDay: (date: string) => ipcRenderer.invoke('adjustments:apply-day', date),
+    getMaxHours: () => ipcRenderer.invoke('adjustments:get-max-hours'),
     onPending: (callback: (adjustments: any[]) => void) => {
       ipcRenderer.on('adjustments-pending', (_, adjustments) => callback(adjustments));
     },
@@ -96,4 +99,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('show-task-selector', () => callback());
     },
   },
+
+  // Reminder window
+  reminderAction: (action: string) => ipcRenderer.invoke('reminder:action', action),
 });

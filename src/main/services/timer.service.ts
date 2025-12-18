@@ -203,4 +203,18 @@ export class TimerService extends EventEmitter {
     const secs = seconds % 60;
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
+
+  setNotificationInterval(minutes: number): void {
+    this.notificationInterval = minutes;
+    console.log(`[TimerService] Notification interval updated to ${minutes} minutes`);
+
+    // Restart notification timer if running
+    if (this.isRunning && this.notificationIntervalId) {
+      this.startNotificationTimer();
+    }
+  }
+
+  getNotificationInterval(): number {
+    return this.notificationInterval;
+  }
 }
