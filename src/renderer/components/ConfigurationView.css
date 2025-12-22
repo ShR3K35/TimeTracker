@@ -355,3 +355,42 @@
   font-size: 12px;
   margin-bottom: 12px;
 }
+
+/* Idle Alert Settings */
+.idle-alert-settings {
+  background: var(--additi-white);
+  border: 1px solid #ffc107;
+  border-left: 4px solid #ffc107;
+}
+
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: auto;
+  cursor: pointer;
+}
+
+.inline-inputs {
+  display: flex;
+  gap: 16px;
+}
+
+.inline-inputs > div {
+  flex: 1;
+}
+
+.inline-inputs input {
+  width: 100%;
+}
+
+.form-group input:disabled {
+  background-color: var(--additi-bg);
+  color: var(--additi-gray-light);
+  cursor: not-allowed;
+}

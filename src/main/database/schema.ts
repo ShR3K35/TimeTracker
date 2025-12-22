@@ -210,6 +210,11 @@ export class DatabaseManager {
       { key: 'startup_with_windows', value: 'true' },
       { key: 'morning_reminder', value: '09:00' },
       { key: 'sound_enabled', value: 'true' },
+      // Idle alert settings
+      { key: 'idle_alert_enabled', value: 'true' },
+      { key: 'idle_alert_interval_minutes', value: '15' },
+      { key: 'idle_alert_start_hour', value: '8' },
+      { key: 'idle_alert_end_hour', value: '18' },
     ];
 
     const insert = this.db.prepare(

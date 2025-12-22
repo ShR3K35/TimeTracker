@@ -36,14 +36,22 @@ export class TimerService extends EventEmitter {
     }
   }
 
-  startTimer(issueKey: string, issueTitle: string, issueType: string, activityId?: number, activityName?: string, activityValue?: string): number {
+  startTimer(issueKey: string, issueTitle: string, issueType: string, activityId?: number, activityName?: string, activityValue?: string, startedAt?: string): number {
     // Stop current timer if running
     if (this.isRunning) {
       this.stopTimer();
     }
 
-    this.startTime = new Date();
-    this.elapsedSeconds = 0;
+    // Use custom start time if provided, otherwise use current time
+    if (startedAt) {
+      this.startTime = new Date(startedAt);
+      // Calculate elapsed seconds from custom start time to now
+      this.elapsedSeconds = Math.floor((Date.now() - this.startTime.getTime()) / 1000);
+      console.log(`[TimerService] Starting timer with custom start time: ${startedAt}, elapsed: ${this.elapsedSeconds}s`);
+    } else {
+      this.startTime = new Date();
+      this.elapsedSeconds = 0;
+    }
     this.isRunning = true;
 
     // Create work session in database
@@ -53,7 +61,7 @@ export class TimerService extends EventEmitter {
       issue_type: issueType,
       start_time: this.startTime.toISOString(),
       end_time: null,
-      duration_seconds: 0,
+      duration_seconds: this.elapsedSeconds, // Use elapsed if custom start time
       comment: null,
       status: 'draft',
       tempo_worklog_id: null,

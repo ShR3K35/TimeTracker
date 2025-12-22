@@ -53,8 +53,8 @@ function App() {
     setCurrentView('timer');
   };
 
-  const handleTaskSelected = async (issue: any, activityId?: number, activityName?: string, activityValue?: string) => {
-    await window.electronAPI.timer.start(issue.key, issue.fields.summary, issue.fields.issuetype.name, activityId, activityName, activityValue);
+  const handleTaskSelected = async (issue: any, activityId?: number, activityName?: string, activityValue?: string, startedAt?: string) => {
+    await window.electronAPI.timer.start(issue.key, issue.fields.summary, issue.fields.issuetype.name, activityId, activityName, activityValue, startedAt);
     setCurrentView('timer');
   };
 

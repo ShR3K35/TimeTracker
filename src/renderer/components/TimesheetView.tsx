@@ -272,12 +272,28 @@ function TimesheetView() {
   };
 
   const reopenDay = async (date: string) => {
+    const confirmed = window.confirm(
+      `Êtes-vous sûr de vouloir réouvrir la journée du ${formatDate(date)} ?\n\n` +
+      `Les worklogs envoyés à Tempo seront supprimés.`
+    );
+    if (!confirmed) return;
+
     try {
       setLoading(true);
-      await window.electronAPI.adjustments.reopenDay(date);
+      const result = await window.electronAPI.adjustments.reopenDay(date);
       await loadRecentDays();
       await analyzeAdjustments();
-      setError('');
+
+      if (result.tempoDeleted > 0 || result.tempoFailed > 0) {
+        if (result.tempoFailed > 0) {
+          setError(`${result.tempoDeleted} worklog(s) supprimé(s) de Tempo, ${result.tempoFailed} échec(s)`);
+        } else {
+          setError('');
+          alert(`${result.tempoDeleted} worklog(s) supprimé(s) de Tempo avec succès`);
+        }
+      } else {
+        setError('');
+      }
     } catch (err: any) {
       setError(err.message || 'Erreur lors de la réouverture');
     } finally {

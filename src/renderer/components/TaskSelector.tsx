@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './TaskSelector.css';
 
 interface TaskSelectorProps {
-  onTaskSelected: (issue: any, activityId?: number, activityName?: string, activityValue?: string) => void;
+  onTaskSelected: (issue: any, activityId?: number, activityName?: string, activityValue?: string, startedAt?: string) => void;
 }
 
 interface TempoActivity {
@@ -24,6 +24,8 @@ function TaskSelector({ onTaskSelected }: TaskSelectorProps) {
   const [activities, setActivities] = useState<TempoActivity[]>([]);
   const [selectedIssue, setSelectedIssue] = useState<any | null>(null);
   const [selectedActivityId, setSelectedActivityId] = useState<number | null>(null);
+  const [useCustomStartTime, setUseCustomStartTime] = useState(false);
+  const [customStartTime, setCustomStartTime] = useState('');
 
   useEffect(() => {
     loadRecentIssues();
@@ -168,26 +170,46 @@ function TaskSelector({ onTaskSelected }: TaskSelectorProps) {
   };
 
   const handleIssueClick = (issue: any) => {
+    // Always show the modal to allow setting start time
+    setSelectedIssue(issue);
     if (activities.length > 0) {
-      // Show activity selection
-      setSelectedIssue(issue);
       setSelectedActivityId(activities[0].tempo_id);
-    } else {
-      // No activities configured, start timer directly
-      onTaskSelected(issue);
     }
+    // Reset start time options
+    setUseCustomStartTime(false);
+    setCustomStartTime('');
   };
 
   const handleStartWithActivity = () => {
     if (!selectedIssue) return;
 
     const activity = activities.find(a => a.tempo_id === selectedActivityId);
-    onTaskSelected(selectedIssue, selectedActivityId || undefined, activity?.name, activity?.value);
+
+    // Calculate startedAt if custom time is set
+    let startedAt: string | undefined;
+    if (useCustomStartTime && customStartTime) {
+      const today = new Date();
+      const [hours, minutes] = customStartTime.split(':').map(Number);
+      today.setHours(hours, minutes, 0, 0);
+      startedAt = today.toISOString();
+    }
+
+    onTaskSelected(
+      selectedIssue,
+      activities.length > 0 ? (selectedActivityId || undefined) : undefined,
+      activity?.name,
+      activity?.value,
+      startedAt
+    );
     setSelectedIssue(null);
+    setUseCustomStartTime(false);
+    setCustomStartTime('');
   };
 
   const handleCancelActivitySelection = () => {
     setSelectedIssue(null);
+    setUseCustomStartTime(false);
+    setCustomStartTime('');
   };
 
   const renderIssueList = (issues: any[], title: string, showFavoriteButton: boolean = true) => {
@@ -278,19 +300,52 @@ function TaskSelector({ onTaskSelected }: TaskSelectorProps) {
               <span className="selected-task-title">{selectedIssue.fields.summary}</span>
             </div>
 
-            <div className="activity-selection">
-              <label>Activité :</label>
-              <div className="activity-buttons">
-                {activities.map((activity) => (
-                  <button
-                    key={activity.tempo_id}
-                    className={`activity-button ${selectedActivityId === activity.tempo_id ? 'selected' : ''}`}
-                    onClick={() => setSelectedActivityId(activity.tempo_id)}
-                  >
-                    {activity.name}
-                  </button>
-                ))}
+            {activities.length > 0 && (
+              <div className="activity-selection">
+                <label>Activité :</label>
+                <div className="activity-buttons">
+                  {activities.map((activity) => (
+                    <button
+                      key={activity.tempo_id}
+                      className={`activity-button ${selectedActivityId === activity.tempo_id ? 'selected' : ''}`}
+                      onClick={() => setSelectedActivityId(activity.tempo_id)}
+                    >
+                      {activity.name}
+                    </button>
+                  ))}
+                </div>
               </div>
+            )}
+
+            <div className="start-time-selection">
+              <label className="start-time-checkbox">
+                <input
+                  type="checkbox"
+                  checked={useCustomStartTime}
+                  onChange={(e) => {
+                    setUseCustomStartTime(e.target.checked);
+                    if (e.target.checked && !customStartTime) {
+                      // Default to current time minus 30 minutes
+                      const now = new Date();
+                      now.setMinutes(now.getMinutes() - 30);
+                      const hours = now.getHours().toString().padStart(2, '0');
+                      const minutes = now.getMinutes().toString().padStart(2, '0');
+                      setCustomStartTime(`${hours}:${minutes}`);
+                    }
+                  }}
+                />
+                J'ai commencé plus tôt
+              </label>
+              {useCustomStartTime && (
+                <div className="start-time-input">
+                  <label>Heure de début :</label>
+                  <input
+                    type="time"
+                    value={customStartTime}
+                    onChange={(e) => setCustomStartTime(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="activity-modal-actions">

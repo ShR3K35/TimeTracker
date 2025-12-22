@@ -6,10 +6,12 @@ import { TempoService } from './services/tempo.service';
 import { TimerService } from './services/timer.service';
 import { AdjustmentService } from './services/adjustment.service';
 import { ShortcutService } from './services/shortcut.service';
+import { IdleAlertService } from './services/idle-alert.service';
 
 class TimeTrackerApp {
   private mainWindow: BrowserWindow | null = null;
   private reminderWindow: BrowserWindow | null = null;
+  private idleAlertWindow: BrowserWindow | null = null;
   private tray: Tray | null = null;
   private db: DatabaseManager;
   private jiraService: JiraService | null = null;
@@ -17,6 +19,7 @@ class TimeTrackerApp {
   private timerService: TimerService;
   private adjustmentService: AdjustmentService;
   private shortcutService: ShortcutService;
+  private idleAlertService: IdleAlertService;
   private notificationTimeout: NodeJS.Timeout | null = null;
   private countdownInterval: NodeJS.Timeout | null = null;
   private isQuitting: boolean = false;
@@ -31,9 +34,11 @@ class TimeTrackerApp {
     this.adjustmentService = new AdjustmentService(this.db, maxDailyHours);
 
     this.shortcutService = new ShortcutService(this.db);
+    this.idleAlertService = new IdleAlertService(this.db, this.timerService);
 
     this.setupTimerListeners();
     this.setupShortcutListeners();
+    this.setupIdleAlertListeners();
     this.setupIpcHandlers();
     this.initializeServicesFromConfig();
   }
@@ -64,6 +69,7 @@ class TimeTrackerApp {
     this.createTray();
     this.checkPendingAdjustments();
     this.shortcutService.initialize(); // Initialize keyboard shortcuts
+    this.idleAlertService.start(); // Start idle alert monitoring
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -234,6 +240,159 @@ class TimeTrackerApp {
       // Show window
       this.mainWindow?.show();
     });
+  }
+
+  private setupIdleAlertListeners() {
+    this.idleAlertService.on('idle-alert-required', () => {
+      this.showIdleAlert();
+    });
+    // Note: Don't start here, start after app is ready in init()
+  }
+
+  private showIdleAlert() {
+    // Don't show if window is already open
+    if (this.idleAlertWindow && !this.idleAlertWindow.isDestroyed()) {
+      this.idleAlertWindow.focus();
+      return;
+    }
+
+    this.idleAlertService.setAlertWindowOpen(true);
+
+    // Create a modal window for the idle alert
+    this.idleAlertWindow = new BrowserWindow({
+      width: 450,
+      height: 320,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      alwaysOnTop: true,
+      frame: false,
+      transparent: false,
+      skipTaskbar: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.js'),
+      },
+    });
+
+    // Center on screen
+    this.idleAlertWindow.center();
+
+    const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          background: #f5f5f5;
+          color: #333;
+          height: 100vh;
+          display: flex;
+          flex-direction: column;
+          padding: 24px;
+          user-select: none;
+          border: 1px solid #ddd;
+        }
+        .header {
+          font-size: 18px;
+          font-weight: 600;
+          margin-bottom: 12px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #444;
+        }
+        .icon {
+          font-size: 24px;
+        }
+        .message {
+          background: #fff3cd;
+          border: 1px solid #ffc107;
+          border-radius: 8px;
+          padding: 16px;
+          margin-bottom: 20px;
+          font-size: 14px;
+          line-height: 1.5;
+          color: #856404;
+        }
+        .buttons {
+          display: flex;
+          gap: 12px;
+          margin-top: auto;
+        }
+        button {
+          flex: 1;
+          padding: 14px;
+          border: none;
+          border-radius: 8px;
+          font-size: 15px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: transform 0.1s, opacity 0.2s;
+        }
+        button:hover { opacity: 0.85; }
+        button:active { transform: scale(0.98); }
+        .btn-select {
+          background: #0052cc;
+          color: white;
+        }
+        .btn-ignore {
+          background: #ddd;
+          color: #333;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header"><span class="icon">⏰</span> Aucune tâche en cours</div>
+      <div class="message">
+        Vous êtes actif sur votre ordinateur mais aucun chronomètre n'est lancé.<br><br>
+        Souhaitez-vous sélectionner une tâche à suivre ?
+      </div>
+      <div class="buttons">
+        <button class="btn-select" onclick="window.electronAPI.idleAlertAction('select')">
+          Sélectionner une tâche
+        </button>
+        <button class="btn-ignore" onclick="window.electronAPI.idleAlertAction('ignore')">
+          Ignorer
+        </button>
+      </div>
+    </body>
+    </html>
+    `;
+
+    this.idleAlertWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+
+    // Handle window close
+    this.idleAlertWindow.on('closed', () => {
+      this.idleAlertWindow = null;
+      this.idleAlertService.setAlertWindowOpen(false);
+    });
+  }
+
+  private closeIdleAlertWindow() {
+    if (this.idleAlertWindow && !this.idleAlertWindow.isDestroyed()) {
+      this.idleAlertWindow.close();
+      this.idleAlertWindow = null;
+    }
+    this.idleAlertService.setAlertWindowOpen(false);
+  }
+
+  private handleIdleAlertAction(action: 'select' | 'ignore') {
+    this.closeIdleAlertWindow();
+
+    if (action === 'select') {
+      console.log('[TimeTrackerApp] User clicked Select Task from idle alert');
+      this.mainWindow?.show();
+      this.mainWindow?.webContents.send('show-task-selector');
+    } else {
+      console.log('[TimeTrackerApp] User ignored idle alert');
+      // Reset last alert time so it won't immediately show again
+      this.idleAlertService.resetLastAlertTime();
+    }
   }
 
   private updateTrayStatus() {
@@ -531,8 +690,8 @@ class TimeTrackerApp {
     });
 
     // Timer
-    ipcMain.handle('timer:start', async (_, issueKey: string, issueTitle: string, issueType: string, activityId?: number, activityName?: string, activityValue?: string) => {
-      const sessionId = this.timerService.startTimer(issueKey, issueTitle, issueType, activityId, activityName, activityValue);
+    ipcMain.handle('timer:start', async (_, issueKey: string, issueTitle: string, issueType: string, activityId?: number, activityName?: string, activityValue?: string, startedAt?: string) => {
+      const sessionId = this.timerService.startTimer(issueKey, issueTitle, issueType, activityId, activityName, activityValue, startedAt);
       return { sessionId };
     });
 
@@ -717,8 +876,41 @@ class TimeTrackerApp {
     });
 
     ipcMain.handle('adjustments:reopen-day', async (_, date: string) => {
+      // Get sessions to find tempo worklog IDs before resetting
+      const sessions = this.db.getWorkSessionsByDate(date);
+      const deletionResults: { sessionId: number; worklogId: string; success: boolean; error?: string }[] = [];
+
+      // Delete worklogs from Tempo if service is available
+      if (this.tempoService) {
+        for (const session of sessions) {
+          if (session.tempo_worklog_id) {
+            try {
+              const worklogId = parseInt(session.tempo_worklog_id);
+              await this.tempoService.deleteWorklog(worklogId);
+              deletionResults.push({ sessionId: session.id, worklogId: session.tempo_worklog_id, success: true });
+              console.log(`[Main] Deleted Tempo worklog ${session.tempo_worklog_id} for session ${session.id}`);
+            } catch (error: any) {
+              console.error(`[Main] Failed to delete Tempo worklog ${session.tempo_worklog_id}:`, error.message);
+              deletionResults.push({ sessionId: session.id, worklogId: session.tempo_worklog_id, success: false, error: error.message });
+            }
+          }
+        }
+      }
+
+      // Reset local status
       this.adjustmentService.reopenDay(date);
-      return { success: true };
+
+      const failedDeletions = deletionResults.filter(r => !r.success);
+      if (failedDeletions.length > 0) {
+        console.warn(`[Main] ${failedDeletions.length} Tempo worklog(s) could not be deleted`);
+      }
+
+      return {
+        success: true,
+        tempoDeleted: deletionResults.filter(r => r.success).length,
+        tempoFailed: failedDeletions.length,
+        failures: failedDeletions,
+      };
     });
 
     ipcMain.handle('adjustments:update-task-duration', async (_, date: string, issueKey: string, durationSeconds: number, activityId?: number | null) => {
@@ -964,6 +1156,32 @@ class TimeTrackerApp {
     // Reminder window actions
     ipcMain.handle('reminder:action', async (_, action: 'continue' | 'change') => {
       this.handleReminderAction(action);
+    });
+
+    // Idle alert window actions
+    ipcMain.handle('idle-alert:action', async (_, action: 'select' | 'ignore') => {
+      this.handleIdleAlertAction(action);
+    });
+
+    // Idle alert configuration
+    ipcMain.handle('idle-alert:get-config', async () => {
+      return {
+        enabled: this.idleAlertService.isEnabled(),
+        intervalMinutes: this.idleAlertService.getAlertInterval(),
+        ...this.idleAlertService.getWorkingHours(),
+      };
+    });
+
+    ipcMain.handle('idle-alert:set-enabled', async (_, enabled: boolean) => {
+      this.idleAlertService.setEnabled(enabled);
+    });
+
+    ipcMain.handle('idle-alert:set-interval', async (_, minutes: number) => {
+      this.idleAlertService.setAlertInterval(minutes);
+    });
+
+    ipcMain.handle('idle-alert:set-working-hours', async (_, startHour: number, endHour: number) => {
+      this.idleAlertService.setWorkingHours(startHour, endHour);
     });
 
     // Tempo Activities

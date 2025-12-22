@@ -11,8 +11,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Timer
   timer: {
-    start: (issueKey: string, issueTitle: string, issueType: string, activityId?: number, activityName?: string, activityValue?: string) =>
-      ipcRenderer.invoke('timer:start', issueKey, issueTitle, issueType, activityId, activityName, activityValue),
+    start: (issueKey: string, issueTitle: string, issueType: string, activityId?: number, activityName?: string, activityValue?: string, startedAt?: string) =>
+      ipcRenderer.invoke('timer:start', issueKey, issueTitle, issueType, activityId, activityName, activityValue, startedAt),
     stop: () => ipcRenderer.invoke('timer:stop'),
     getState: () => ipcRenderer.invoke('timer:get-state'),
     onStarted: (callback: (data: any) => void) => {
@@ -119,6 +119,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Reminder window
   reminderAction: (action: string) => ipcRenderer.invoke('reminder:action', action),
+
+  // Idle alert window
+  idleAlertAction: (action: string) => ipcRenderer.invoke('idle-alert:action', action),
+
+  // Idle alert configuration
+  idleAlert: {
+    getConfig: () => ipcRenderer.invoke('idle-alert:get-config'),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('idle-alert:set-enabled', enabled),
+    setInterval: (minutes: number) => ipcRenderer.invoke('idle-alert:set-interval', minutes),
+    setWorkingHours: (startHour: number, endHour: number) =>
+      ipcRenderer.invoke('idle-alert:set-working-hours', startHour, endHour),
+  },
 
   // Tempo Activities
   activities: {

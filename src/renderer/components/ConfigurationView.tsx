@@ -33,14 +33,40 @@ function ConfigurationView({ onConfigured }: ConfigurationViewProps) {
   const [newActivityName, setNewActivityName] = useState('');
   const [newActivityValue, setNewActivityValue] = useState('');
 
+  // Idle Alert settings
+  const [idleAlertEnabled, setIdleAlertEnabled] = useState(true);
+  const [idleAlertInterval, setIdleAlertInterval] = useState('15');
+  const [idleAlertStartHour, setIdleAlertStartHour] = useState('8');
+  const [idleAlertEndHour, setIdleAlertEndHour] = useState('18');
+
   useEffect(() => {
     loadConfiguration();
     loadActivities();
+    loadIdleAlertConfig();
   }, []);
 
   const loadActivities = async () => {
     const acts = await window.electronAPI.activities.get();
     setActivities(acts);
+  };
+
+  const loadIdleAlertConfig = async () => {
+    const config = await window.electronAPI.idleAlert.getConfig();
+    setIdleAlertEnabled(config.enabled);
+    setIdleAlertInterval(config.intervalMinutes.toString());
+    setIdleAlertStartHour(config.startHour.toString());
+    setIdleAlertEndHour(config.endHour.toString());
+  };
+
+  const saveIdleAlertSettings = async () => {
+    await window.electronAPI.idleAlert.setEnabled(idleAlertEnabled);
+    await window.electronAPI.idleAlert.setInterval(parseInt(idleAlertInterval));
+    await window.electronAPI.idleAlert.setWorkingHours(
+      parseInt(idleAlertStartHour),
+      parseInt(idleAlertEndHour)
+    );
+    setSettingsSaved(true);
+    setTimeout(() => setSettingsSaved(false), 3000);
   };
 
   const addActivity = async () => {
@@ -183,6 +209,66 @@ function ConfigurationView({ onConfigured }: ConfigurationViewProps) {
           Sauvegarder les paramètres
         </button>
         {settingsSaved && <span className="settings-saved">Paramètres sauvegardés !</span>}
+      </div>
+
+      <div className="form-section idle-alert-settings">
+        <h3>Alerte d'inactivité</h3>
+        <small className="section-description">
+          Affiche une alerte si aucune tâche n'est en cours pendant les heures de travail et que vous êtes actif sur l'ordinateur.
+        </small>
+        <div className="form-group checkbox-group">
+          <label>
+            <input
+              type="checkbox"
+              checked={idleAlertEnabled}
+              onChange={(e) => setIdleAlertEnabled(e.target.checked)}
+            />
+            Activer les alertes d'inactivité
+          </label>
+        </div>
+        <div className="form-group">
+          <label htmlFor="idleAlertInterval">Intervalle entre les alertes (minutes)</label>
+          <input
+            id="idleAlertInterval"
+            type="number"
+            min="5"
+            max="120"
+            value={idleAlertInterval}
+            onChange={(e) => setIdleAlertInterval(e.target.value)}
+            disabled={!idleAlertEnabled}
+          />
+          <small>Temps minimum entre deux alertes</small>
+        </div>
+        <div className="form-group inline-inputs">
+          <div>
+            <label htmlFor="idleAlertStartHour">Heure de début</label>
+            <input
+              id="idleAlertStartHour"
+              type="number"
+              min="0"
+              max="23"
+              value={idleAlertStartHour}
+              onChange={(e) => setIdleAlertStartHour(e.target.value)}
+              disabled={!idleAlertEnabled}
+            />
+          </div>
+          <div>
+            <label htmlFor="idleAlertEndHour">Heure de fin</label>
+            <input
+              id="idleAlertEndHour"
+              type="number"
+              min="0"
+              max="23"
+              value={idleAlertEndHour}
+              onChange={(e) => setIdleAlertEndHour(e.target.value)}
+              disabled={!idleAlertEnabled}
+            />
+          </div>
+        </div>
+        <small>Les alertes ne s'affichent que du lundi au vendredi, entre ces heures</small>
+        <button type="button" onClick={saveIdleAlertSettings} className="save-settings-button">
+          Sauvegarder les alertes
+        </button>
       </div>
 
       <form onSubmit={handleSubmit}>

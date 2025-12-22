@@ -292,3 +292,52 @@
 .activity-modal-actions .start-button:hover {
   background: var(--additi-red-hover);
 }
+
+/* Start time selection */
+.start-time-selection {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--additi-border);
+}
+
+.start-time-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--additi-dark);
+  cursor: pointer;
+}
+
+.start-time-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.start-time-input {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding-left: 24px;
+}
+
+.start-time-input label {
+  font-size: 13px;
+  color: var(--additi-gray);
+}
+
+.start-time-input input[type="time"] {
+  padding: 8px 12px;
+  border: 1px solid var(--additi-border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  color: var(--additi-dark);
+}
+
+.start-time-input input[type="time"]:focus {
+  outline: none;
+  border-color: var(--additi-navy);
+  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.1);
+}
